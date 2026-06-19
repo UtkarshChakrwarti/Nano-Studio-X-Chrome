@@ -1,0 +1,1726 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NANO / a local intelligence playground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=JetBrains+Mono:wght@300;400;500;700&family=Inter+Tight:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #ece7dd;
+    --paper-2: #e3ddd0;
+    --ink: #161514;
+    --ink-soft: #3a3631;
+    --ink-faint: #807a6f;
+    --rule: #c8c1b2;
+    --accent: #c2412b;   /* vermillion */
+    --accent-2: #6b8e4e; /* moss */
+    --highlight: #f3c969;
+    --shadow: rgba(22,21,20,0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* paper grain overlay */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(rgba(22,21,20,0.025) 1px, transparent 1px),
+      radial-gradient(rgba(22,21,20,0.018) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1px 2px;
+    mix-blend-mode: multiply;
+    z-index: 1;
+  }
+
+  .app {
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    position: relative;
+    z-index: 2;
+  }
+
+  /* =================== SIDEBAR =================== */
+  .sidebar {
+    background: var(--paper-2);
+    border-right: 1px solid var(--rule);
+    padding: 28px 28px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    overflow-y: auto;
+    position: relative;
+  }
+
+  .sidebar::after {
+    content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 1px;
+    background: linear-gradient(to bottom, transparent, var(--ink-faint), transparent);
+    opacity: 0.4;
+  }
+
+  .masthead {
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 18px;
+  }
+
+  .masthead .issue {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 14px;
+  }
+
+  .masthead .issue .live {
+    color: var(--accent);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .masthead .issue .live::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 0 rgba(194,65,43,0.55);
+    animation: ping 2s infinite;
+  }
+  @keyframes ping {
+    0%   { box-shadow: 0 0 0 0 rgba(194,65,43,0.55); }
+    70%  { box-shadow: 0 0 0 10px rgba(194,65,43,0); }
+    100% { box-shadow: 0 0 0 0 rgba(194,65,43,0); }
+  }
+
+  .wordmark {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 1;
+    font-size: 56px;
+    line-height: 0.85;
+    letter-spacing: -0.04em;
+    color: var(--ink);
+  }
+  .wordmark em {
+    font-style: italic;
+    font-weight: 300;
+    color: var(--accent);
+  }
+
+  .tagline {
+    margin-top: 10px;
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.4;
+    max-width: 28ch;
+  }
+
+  /* setting groups */
+  .group { display: flex; flex-direction: column; gap: 10px; }
+
+  .group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .group-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .group-label .num {
+    color: var(--accent);
+    margin-right: 8px;
+    font-weight: 700;
+  }
+
+  .group-value {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: "opsz" 144;
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  /* sliders */
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    background: transparent;
+    margin: 4px 0 0;
+    height: 22px;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 2px;
+    background: var(--ink);
+    border-radius: 0;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 2px;
+    background: var(--ink);
+    border-radius: 0;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    height: 18px; width: 18px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    margin-top: -8px;
+    cursor: grab;
+    transition: transform 0.12s ease, background 0.12s ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    transform: scale(1.15);
+  }
+  input[type="range"]::-webkit-slider-thumb:active { cursor: grabbing; }
+  input[type="range"]::-moz-range-thumb {
+    height: 14px; width: 14px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    cursor: grab;
+  }
+
+  .slider-meta {
+    display: flex; justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .group-help {
+    font-family: 'Fraunces', serif;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    margin-top: 8px;
+    font-style: italic;
+  }
+  .group-help .hint {
+    display: block;
+    margin-top: 4px;
+    font-style: normal;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    text-transform: lowercase;
+  }
+
+  /* system prompt */
+  .sys-wrap {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    position: relative;
+    transition: border-color 0.2s;
+  }
+  .sys-wrap:focus-within {
+    border-color: var(--ink);
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+  textarea.system-input {
+    width: 100%;
+    height: 120px;
+    background: transparent;
+    border: none;
+    outline: none;
+    padding: 14px 14px 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--ink);
+    resize: vertical;
+    line-height: 1.55;
+  }
+  textarea.system-input::placeholder {
+    color: var(--ink-faint);
+    font-style: italic;
+    font-family: 'Fraunces', serif;
+  }
+  .sys-corner {
+    position: absolute;
+    bottom: 6px; right: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--ink-faint);
+    letter-spacing: 0.15em;
+    pointer-events: none;
+  }
+
+  /* presets */
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .preset {
+    background: transparent;
+    border: 1px solid var(--rule);
+    padding: 5px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    cursor: pointer;
+    border-radius: 999px;
+    transition: all 0.15s ease;
+  }
+  .preset:hover {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  /* status */
+  .status {
+    margin-top: auto;
+    padding: 14px 16px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--ink-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    border-radius: 2px;
+  }
+  .status.ok    { border-left-color: var(--accent-2); }
+  .status.warn  { border-left-color: var(--highlight); }
+  .status.err   { border-left-color: var(--accent); }
+  .status-head {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 6px;
+  }
+  .status-body { color: var(--ink); font-size: 12px; }
+
+  /* =================== MAIN =================== */
+  .main {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .topbar {
+    padding: 22px 40px;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--paper);
+    flex-shrink: 0;
+  }
+
+  .topbar-left {
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-size: 18px;
+    color: var(--ink-soft);
+  }
+  .topbar-left strong {
+    font-style: normal;
+    font-weight: 600;
+    color: var(--ink);
+    margin-right: 6px;
+  }
+
+  .topbar-right {
+    display: flex; gap: 22px; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .topbar-right .clock { color: var(--ink); font-weight: 500; }
+
+  /* chat */
+  .chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 40px 60px 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
+    scroll-behavior: smooth;
+  }
+
+  .chat::-webkit-scrollbar { width: 8px; }
+  .chat::-webkit-scrollbar-track { background: transparent; }
+  .chat::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
+  .chat::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
+
+  .msg { max-width: 760px; }
+  .msg.user { align-self: flex-end; }
+  .msg.ai   { align-self: flex-start; width: 100%; }
+
+  .msg-meta {
+    display: flex; gap: 10px; align-items: baseline;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 10px;
+  }
+  .msg-meta .who { color: var(--ink); font-weight: 700; }
+  .msg.user .msg-meta { justify-content: flex-end; }
+
+  .bubble {
+    font-size: 16px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  /* The streamed text lives inside a span — force whitespace handling on it
+     directly so newlines and indentation render instead of collapsing. */
+  .bubble .text {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  /* Light markdown rendering inside AI bubbles */
+  .bubble .text strong {
+    font-weight: 600;
+    font-style: normal;
+    color: var(--ink);
+  }
+  .bubble .text em {
+    font-style: italic;
+    color: var(--ink-soft);
+  }
+  .bubble .text code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85em;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  .bubble .text pre {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 14px 18px;
+    margin: 12px 0;
+    border-radius: 2px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    box-shadow: 4px 4px 0 var(--accent);
+  }
+  .bubble .text pre code {
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+  }
+  .bubble .text h1, .bubble .text h2, .bubble .text h3 {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    margin: 18px 0 8px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .bubble .text h1 { font-size: 1.4em; }
+  .bubble .text h2 { font-size: 1.2em; }
+  .bubble .text h3 { font-size: 1.05em; color: var(--accent); }
+
+  .msg.user .bubble {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 16px 22px;
+    border-radius: 2px;
+    font-family: 'Inter Tight', sans-serif;
+    box-shadow: 4px 4px 0 var(--accent);
+  }
+
+  .msg.ai .bubble {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: "opsz" 14;
+    font-weight: 400;
+    color: var(--ink);
+    padding-left: 22px;
+    border-left: 3px solid var(--accent);
+    font-size: 18px;
+    line-height: 1.65;
+    position: relative;
+  }
+
+  .msg.ai .bubble .cursor {
+    display: inline-block;
+    width: 9px;
+    height: 18px;
+    background: var(--accent);
+    vertical-align: text-bottom;
+    margin-left: 3px;
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .msg.system {
+    align-self: center;
+    text-align: center;
+    color: var(--ink-faint);
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-size: 14px;
+    max-width: 560px;
+  }
+  .msg.system::before, .msg.system::after {
+    content: "—"; margin: 0 12px; color: var(--rule);
+  }
+
+  /* welcome / hero state */
+  .hero {
+    display: flex; flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    max-width: 780px;
+    margin: auto;
+    padding: 20px 0;
+  }
+  .hero .kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 22px;
+  }
+  .hero h1 {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: "opsz" 144, "SOFT" 50, "WONK" 1;
+    font-weight: 300;
+    font-size: clamp(40px, 5vw, 72px);
+    line-height: 0.95;
+    letter-spacing: -0.035em;
+    margin-bottom: 22px;
+  }
+  .hero h1 em {
+    font-style: italic;
+    color: var(--accent);
+    font-weight: 400;
+  }
+  .hero p {
+    font-family: 'Fraunces', serif;
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 58ch;
+    margin-bottom: 30px;
+  }
+  .suggestion-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    width: 100%;
+    max-width: 600px;
+  }
+  .suggestion {
+    background: transparent;
+    border: 1px solid var(--rule);
+    padding: 14px 18px;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.15s ease;
+    font-family: inherit;
+    color: var(--ink-soft);
+  }
+  .suggestion:hover {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+    transform: translate(-2px, -2px);
+    box-shadow: 4px 4px 0 var(--accent);
+  }
+  .suggestion .s-kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+    display: block;
+  }
+  .suggestion:hover .s-kicker { color: var(--highlight); }
+  .suggestion .s-text {
+    font-family: 'Fraunces', serif;
+    font-size: 15px;
+    font-style: italic;
+  }
+
+  /* input */
+  .input-zone {
+    padding: 18px 40px 26px;
+    border-top: 1px solid var(--rule);
+    background: var(--paper);
+    flex-shrink: 0;
+  }
+  .input-shell {
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 10px 12px;
+    transition: all 0.18s ease;
+  }
+  .input-shell:focus-within {
+    border-color: var(--ink);
+    box-shadow: 4px 4px 0 var(--ink);
+    transform: translate(-1px, -1px);
+  }
+
+  textarea.chat-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: 'Fraunces', serif;
+    font-size: 17px;
+    line-height: 1.5;
+    color: var(--ink);
+    max-height: 180px;
+    min-height: 28px;
+    padding: 6px 8px;
+  }
+  textarea.chat-input::placeholder {
+    color: var(--ink-faint);
+    font-style: italic;
+  }
+
+  .icon-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+    width: 38px; height: 38px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 2px;
+    transition: all 0.15s ease;
+  }
+  .icon-btn:hover {
+    background: var(--ink);
+    color: var(--paper);
+  }
+  .icon-btn.recording {
+    background: var(--accent);
+    color: var(--paper);
+    animation: recPulse 1.2s ease-in-out infinite;
+  }
+  @keyframes recPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(194,65,43, 0.6); }
+    50%      { box-shadow: 0 0 0 8px rgba(194,65,43, 0); }
+  }
+
+  .send-btn {
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    padding: 0 22px;
+    height: 38px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 2px;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: all 0.15s ease;
+  }
+  .send-btn:hover:not(:disabled) {
+    background: var(--accent);
+    transform: translate(-2px, -2px);
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+  .send-btn:disabled {
+    opacity: 0.4; cursor: not-allowed;
+  }
+  .send-btn .arrow {
+    display: inline-block;
+    transition: transform 0.2s ease;
+  }
+  .send-btn:hover:not(:disabled) .arrow { transform: translateX(3px); }
+
+  .input-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .input-foot kbd {
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    padding: 2px 6px;
+    border-radius: 2px;
+    margin: 0 2px;
+    font-family: inherit;
+  }
+
+  .copy-btn {
+    background: transparent;
+    border: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    cursor: pointer;
+    padding: 6px 0;
+    margin-top: 10px;
+    border-bottom: 1px solid transparent;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { color: var(--ink); border-bottom-color: var(--ink); }
+
+  /* setup button + modal */
+  .setup-btn {
+    margin-top: 12px;
+    width: 100%;
+    background: transparent;
+    border: 1px dashed var(--ink-soft);
+    color: var(--ink);
+    padding: 9px 12px;
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.15s ease;
+  }
+  .setup-btn:hover {
+    background: var(--ink);
+    color: var(--paper);
+    border-style: solid;
+    border-color: var(--ink);
+  }
+  .setup-arrow {
+    transition: transform 0.2s ease;
+  }
+  .setup-btn:hover .setup-arrow { transform: translateX(3px); }
+
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(22, 21, 20, 0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 24px;
+    animation: fadeIn 0.18s ease;
+  }
+  .modal-backdrop.open { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .modal {
+    background: var(--paper);
+    max-width: 680px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    border: 1px solid var(--ink);
+    box-shadow: 12px 12px 0 var(--accent);
+    padding: 40px 48px 32px;
+    position: relative;
+    animation: slideUp 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  @keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+
+  .modal::-webkit-scrollbar { width: 8px; }
+  .modal::-webkit-scrollbar-thumb { background: var(--rule); }
+
+  .modal-close {
+    position: absolute;
+    top: 14px; right: 18px;
+    width: 32px; height: 32px;
+    border: none; background: transparent;
+    font-family: 'Fraunces', serif;
+    font-size: 28px;
+    line-height: 1;
+    color: var(--ink-soft);
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.15s;
+  }
+  .modal-close:hover { background: var(--ink); color: var(--paper); }
+
+  .modal-kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+  .modal-title {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: "opsz" 144, "SOFT" 40;
+    font-weight: 400;
+    font-size: 38px;
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+    margin-bottom: 16px;
+    color: var(--ink);
+  }
+  .modal-title em {
+    font-style: italic;
+    color: var(--accent);
+    font-weight: 300;
+  }
+  .modal-lede {
+    font-family: 'Fraunces', serif;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    margin-bottom: 30px;
+    max-width: 56ch;
+  }
+
+  .steps {
+    list-style: none;
+    padding: 0;
+    border-top: 1px solid var(--rule);
+  }
+  .steps li {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 22px;
+    padding: 22px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .step-num {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: "opsz" 144;
+    font-weight: 300;
+    font-size: 42px;
+    line-height: 0.9;
+    color: var(--accent);
+    letter-spacing: -0.04em;
+  }
+  .step-body h3 {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 19px;
+    margin-bottom: 8px;
+    color: var(--ink);
+  }
+  .step-body p {
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    margin-bottom: 10px;
+  }
+  .step-body p:last-child { margin-bottom: 0; }
+  .step-body strong { color: var(--ink); font-weight: 600; }
+
+  .snippet, .step-body code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    padding: 2px 6px;
+    border-radius: 2px;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  .copy-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin: 8px 0 10px;
+    border: 1px solid var(--ink);
+    background: var(--paper-2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .copy-target {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 9px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    color: var(--ink);
+    user-select: all;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .copy-mini {
+    border: none;
+    border-left: 1px solid var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    padding: 0 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .copy-mini:hover { background: var(--accent); }
+  .copy-mini.done { background: var(--accent-2); }
+
+  .modal-foot {
+    margin-top: 24px;
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .foot-note {
+    flex: 1;
+    min-width: 260px;
+    font-family: 'Fraunces', serif;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+  .foot-note strong {
+    font-style: normal;
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .modal-recheck {
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    padding: 12px 22px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+  .modal-recheck:hover {
+    background: var(--accent);
+    transform: translate(-2px, -2px);
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+
+  @media (max-width: 600px) {
+    .modal { padding: 28px 22px 22px; box-shadow: 6px 6px 0 var(--accent); }
+    .modal-title { font-size: 28px; }
+    .steps li { grid-template-columns: 44px 1fr; gap: 14px; }
+    .step-num { font-size: 30px; }
+  }
+
+  /* responsive */
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .chat { padding: 24px; }
+    .topbar, .input-zone { padding-left: 24px; padding-right: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============== SIDEBAR ============== -->
+  <aside class="sidebar">
+    <div class="masthead">
+      <div class="issue">
+        <span>Vol. I &nbsp;·&nbsp; Local Edition</span>
+        <span class="live" id="liveLabel">offline</span>
+      </div>
+      <div class="wordmark">Nano<em>·</em></div>
+      <div class="tagline">A reading room for the model that lives inside your browser.</div>
+    </div>
+
+    <div class="group">
+      <div class="group-header">
+        <span class="group-label"><span class="num">01</span>Disposition</span>
+      </div>
+      <div class="sys-wrap">
+        <textarea id="systemPrompt" class="system-input" placeholder="Describe the voice, the role, the constraints — what should the model become when it answers?"></textarea>
+        <div class="sys-corner">SYSTEM</div>
+      </div>
+      <div class="presets">
+        <button class="preset" data-preset="karpathy">karpathy</button>
+        <button class="preset" data-sys="You are a terse, witty editor. Respond in tight, deliberate prose. No filler.">editor</button>
+        <button class="preset" data-sys="You are a senior software engineer. Be precise, show code, and call out tradeoffs.">engineer</button>
+        <button class="preset" data-sys="You are a patient teacher. Explain by analogy, build up from the basics, and check understanding.">tutor</button>
+        <button class="preset" data-sys="You are a poet. Reply in short, image-rich verses with restraint and music.">poet</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-header">
+        <span class="group-label"><span class="num">02</span>Temperature</span>
+        <span class="group-value" id="tempVal">0.7</span>
+      </div>
+      <input type="range" id="temperature" min="0.1" max="2.0" step="0.1" value="0.7" />
+      <div class="slider-meta">
+        <span>precise</span><span>feral</span>
+      </div>
+      <p class="group-help">
+        Controls how adventurous the model is when picking each next word.
+        <span class="hint" id="tempHint">balanced — useful default</span>
+      </p>
+    </div>
+
+    <div class="group">
+      <div class="group-header">
+        <span class="group-label"><span class="num">03</span>Top–K</span>
+        <span class="group-value" id="topkVal">40</span>
+      </div>
+      <input type="range" id="topk" min="1" max="100" step="1" value="40" />
+      <div class="slider-meta">
+        <span>narrow</span><span>wide</span>
+      </div>
+      <p class="group-help">
+        Limits the candidate pool to the K most likely next words before sampling.
+        <span class="hint" id="topkHint">a healthy mix of options</span>
+      </p>
+    </div>
+
+    <div class="status" id="statusCard">
+      <div class="status-head">
+        <span>Engine</span>
+        <span id="statusTag">checking</span>
+      </div>
+      <div class="status-body" id="statusText">Probing browser for local model…</div>
+      <button class="setup-btn" id="setupBtn">
+        <span>How to enable this in Chrome</span>
+        <span class="setup-arrow">→</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============== MAIN ============== -->
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <strong>Nano Studio</strong> <em>— conversations with a model on your own machine</em>
+      </div>
+      <div class="topbar-right">
+        <span id="tokenCount">0 TOKENS</span>
+        <span>·</span>
+        <span class="clock" id="clock">--:--</span>
+      </div>
+    </div>
+
+    <div class="chat" id="chatContainer">
+      <!-- hero rendered by JS -->
+    </div>
+
+    <div class="input-zone">
+      <div class="input-shell">
+        <textarea id="chatInput" class="chat-input" rows="1" placeholder="Ask anything — your text never leaves this device…"></textarea>
+
+        <button class="icon-btn" id="micBtn" title="Dictate">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="2" width="6" height="12" rx="3"></rect>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+        </button>
+
+        <button class="send-btn" id="sendBtn">
+          <span>Generate</span>
+          <span class="arrow">→</span>
+        </button>
+      </div>
+      <div class="input-foot">
+        <span>Press <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for newline</span>
+        <span id="footRight">Running locally · 0 ms</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ============== SETUP MODAL ============== -->
+<div class="modal-backdrop" id="setupModal" aria-hidden="true">
+  <div class="modal" role="dialog" aria-labelledby="modalTitle">
+    <button class="modal-close" id="setupClose" aria-label="Close">×</button>
+
+    <div class="modal-kicker">Setup · One-time</div>
+    <h2 id="modalTitle" class="modal-title">How to turn on <em>Gemini Nano</em> in your Chrome.</h2>
+    <p class="modal-lede">
+      Nano is a small AI model that Chrome can run entirely on your own machine —
+      no servers, no API key, nothing leaves the laptop. It's hidden behind two
+      developer flags. Here's the five-minute walk.
+    </p>
+
+    <ol class="steps">
+      <li>
+        <div class="step-num">01</div>
+        <div class="step-body">
+          <h3>Use the right Chrome</h3>
+          <p>You need <strong>Chrome 138+</strong> (Stable, Dev, or Canary all work). Check at
+            <span class="snippet">chrome://version</span>. If you're older, update first.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-num">02</div>
+        <div class="step-body">
+          <h3>Enable the Prompt API flag</h3>
+          <p>Paste this into Chrome's address bar and hit enter:</p>
+          <div class="copy-row">
+            <code class="copy-target" data-copy="chrome://flags/#prompt-api-for-gemini-nano">chrome://flags/#prompt-api-for-gemini-nano</code>
+            <button class="copy-mini" data-copy-for="chrome://flags/#prompt-api-for-gemini-nano">copy</button>
+          </div>
+          <p>Set the dropdown to <strong>Enabled</strong>.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-num">03</div>
+        <div class="step-body">
+          <h3>Enable the on-device model flag</h3>
+          <p>Same drill — paste, then set the dropdown:</p>
+          <div class="copy-row">
+            <code class="copy-target" data-copy="chrome://flags/#optimization-guide-on-device-model">chrome://flags/#optimization-guide-on-device-model</code>
+            <button class="copy-mini" data-copy-for="chrome://flags/#optimization-guide-on-device-model">copy</button>
+          </div>
+          <p>Set it to <strong>Enabled BypassPerfRequirement</strong> (the longer option — this lets it run even if Chrome thinks your machine isn't beefy enough).</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-num">04</div>
+        <div class="step-body">
+          <h3>Relaunch Chrome</h3>
+          <p>Click the blue <strong>Relaunch</strong> button that appeared at the bottom of the flags page. All your tabs come back.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-num">05</div>
+        <div class="step-body">
+          <h3>Force the model to download</h3>
+          <p>Open this page and wait. The model is ~2 GB and downloads in the background; the first time can take a few minutes:</p>
+          <div class="copy-row">
+            <code class="copy-target" data-copy="chrome://on-device-internals">chrome://on-device-internals</code>
+            <button class="copy-mini" data-copy-for="chrome://on-device-internals">copy</button>
+          </div>
+          <p>Look for status <strong>Ready</strong> or a filled-in <strong>Model path</strong>. If it says <em>downloadable</em> but nothing's moving, just open a tab and click "Generate" once — that kicks the download off.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="step-num">06</div>
+        <div class="step-body">
+          <h3>Serve this file over localhost</h3>
+          <p>The Prompt API refuses to load from <span class="snippet">file://</span> URLs. From the folder containing this HTML, run:</p>
+          <div class="copy-row">
+            <code class="copy-target" data-copy="python3 -m http.server 8000">python3 -m http.server 8000</code>
+            <button class="copy-mini" data-copy-for="python3 -m http.server 8000">copy</button>
+          </div>
+          <p>Then visit <span class="snippet">http://localhost:8000/nano-studio.html</span> in Chrome.</p>
+        </div>
+      </li>
+    </ol>
+
+    <div class="modal-foot">
+      <div class="foot-note">
+        <strong>Still stuck?</strong> Open Chrome's DevTools console on this page and type
+        <span class="snippet">await window.LanguageModel.availability()</span> — if the answer
+        isn't <em>available</em>, the message tells you which step needs another look.
+      </div>
+      <button class="modal-recheck" id="modalRecheck">Re-check status</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ============= ELEMENTS =============
+  const tempSlider = document.getElementById('temperature');
+  const tempVal = document.getElementById('tempVal');
+  const topkSlider = document.getElementById('topk');
+  const topkVal = document.getElementById('topkVal');
+  const chatInput = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const micBtn = document.getElementById('micBtn');
+  const chatContainer = document.getElementById('chatContainer');
+  const statusCard = document.getElementById('statusCard');
+  const statusTag = document.getElementById('statusTag');
+  const statusText = document.getElementById('statusText');
+  const liveLabel = document.getElementById('liveLabel');
+  const systemPromptInput = document.getElementById('systemPrompt');
+  const clock = document.getElementById('clock');
+  const tokenCount = document.getElementById('tokenCount');
+  const footRight = document.getElementById('footRight');
+
+  // sliders
+  const tempHint = document.getElementById('tempHint');
+  const topkHint = document.getElementById('topkHint');
+
+  function describeTemp(t) {
+    if (t <= 0.3) return 'rigid · same answer every time';
+    if (t <= 0.6) return 'focused · sticks to the obvious choice';
+    if (t <= 0.9) return 'balanced · useful default';
+    if (t <= 1.3) return 'creative · willing to surprise you';
+    return 'unhinged · expect typos and tangents';
+  }
+  function describeTopK(k) {
+    if (k <= 5)  return 'tunnel vision · only the top few words';
+    if (k <= 20) return 'tight · safe, predictable phrasing';
+    if (k <= 50) return 'a healthy mix of options';
+    if (k <= 80) return 'broad · room for unusual word choices';
+    return 'wide open · anything plausible is fair game';
+  }
+
+  tempSlider.addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    tempVal.textContent = v.toFixed(1);
+    tempHint.textContent = describeTemp(v);
+  });
+  topkSlider.addEventListener('input', e => {
+    const v = parseInt(e.target.value);
+    topkVal.textContent = v;
+    topkHint.textContent = describeTopK(v);
+  });
+
+  // initialize hints from default values
+  tempHint.textContent = describeTemp(parseFloat(tempSlider.value));
+  topkHint.textContent = describeTopK(parseInt(topkSlider.value));
+
+  // presets
+  const PRESETS = {
+    karpathy: `Karpathy Coding Discipline Protocol
+
+You are operating under the Karpathy AI Discipline Engine. Your objective is to trade superficial velocity for absolute correctness, minimal diff footprints, and structural simplicity.
+
+## Core Rules of Engagement
+
+### 1. Think Before Coding (Pre-Flight Analysis)
+- State Assumptions First: Before writing a single line of code, explicitly state your understanding of the requirements and technical bounds.
+- Surface Ambiguities Immediately: If a requirement can be interpreted in two ways, stop and list both options. Do not make a silent guess.
+- Push Back on Complexity: If the requested approach is over-engineered compared to a simpler built-in option, state it clearly: "This works, but we can accomplish it natively in 3 lines using X. Would you prefer that?"
+
+### 2. Simplicity First (Anti-Bloat)
+- Minimum Viable Logic: Write the absolute minimum code required to fully satisfy the request.
+- No Speculative Abstractions: Do not create utility classes, helper files, wrapper functions, or "configurable" architectures unless explicitly asked.
+- The 50-Line Test: If a solution takes 200 lines but can be re-architected into 50 plain lines, rewrite it immediately before displaying it.
+
+### 3. Surgical Changes (Zero Scope-Creep)
+- Isolate the Diff: Touch only the precise files and lines required to complete the task.
+- No Drive-by Improvements: Do not reformat adjacent functions, fix unrelated typos, change variable naming conventions in nearby code, or delete dead code you happen to pass by.
+- Preserve Current Style: Match the repository's exact existing formatting and style guidelines, even if you disagree with them.
+
+### 4. Goal-Driven Execution (Explicit Verification)
+- Define Done: Before execution, outline exactly what verification looks like.
+- Transform Tasks into Loops: Shift from "implement validation" to "identify the invalid input vectors, implement the constraints, and explicitly verify failure and success conditions."
+- Output Complete Files/Blocks: Provide fully executable, copy-paste-ready code. Avoid code slicing ("// rest of your code here") which forces manual merging and human error.`
+  };
+
+  document.querySelectorAll('.preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.preset;
+      systemPromptInput.value = key ? PRESETS[key] : btn.dataset.sys;
+      systemPromptInput.focus();
+      invalidateSession('system prompt changed');
+    });
+  });
+
+  // Any param change invalidates the warm session so the next turn rebuilds it.
+  [tempSlider, topkSlider].forEach(el => {
+    el.addEventListener('change', () => invalidateSession('sampling params changed'));
+  });
+  systemPromptInput.addEventListener('change', () => invalidateSession('system prompt changed'));
+
+  // textarea autosize
+  chatInput.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = this.scrollHeight + 'px';
+  });
+
+  // clock
+  function updateClock() {
+    const d = new Date();
+    const h = d.getHours().toString().padStart(2, '0');
+    const m = d.getMinutes().toString().padStart(2, '0');
+    clock.textContent = `${h}:${m}`;
+  }
+  updateClock();
+  setInterval(updateClock, 30000);
+
+  // ============= HERO STATE =============
+  function renderHero() {
+    chatContainer.innerHTML = `
+      <div class="hero">
+        <div class="kicker">001 — Begin Here</div>
+        <h1>Think quietly,<br>answer <em>locally.</em></h1>
+        <p>This is a small studio for talking to the model baked into your browser. Nothing is uploaded. Nothing leaves. Drag the dials on the left, write a disposition, and ask a question that's been waiting in the back of your head.</p>
+        <div class="suggestion-grid">
+          <button class="suggestion" data-fill="Explain quantum entanglement using only kitchen analogies.">
+            <span class="s-kicker">Idea · 01</span>
+            <span class="s-text">Explain quantum entanglement using only kitchen analogies.</span>
+          </button>
+          <button class="suggestion" data-fill="Write a short noir paragraph set in a 24-hour laundromat.">
+            <span class="s-kicker">Idea · 02</span>
+            <span class="s-text">Write a short noir paragraph set in a 24-hour laundromat.</span>
+          </button>
+          <button class="suggestion" data-fill="What's the difference between accuracy and precision? Use one diagram in ASCII.">
+            <span class="s-kicker">Idea · 03</span>
+            <span class="s-text">Accuracy vs. precision — explain with one ASCII diagram.</span>
+          </button>
+          <button class="suggestion" data-fill="Pitch me three names for a small bookshop that only sells essays.">
+            <span class="s-kicker">Idea · 04</span>
+            <span class="s-text">Three names for a bookshop that sells only essays.</span>
+          </button>
+        </div>
+      </div>
+    `;
+    document.querySelectorAll('.suggestion').forEach(s => {
+      s.addEventListener('click', () => {
+        chatInput.value = s.dataset.fill;
+        chatInput.focus();
+        chatInput.dispatchEvent(new Event('input'));
+      });
+    });
+  }
+  renderHero();
+
+  // ============= STATUS / AVAILABILITY =============
+  async function checkAvailability() {
+    if (typeof window.LanguageModel === 'undefined') {
+      statusCard.className = 'status err';
+      statusTag.textContent = 'unavailable';
+      statusText.innerHTML = 'No <code>window.LanguageModel</code>. Open this file via <strong>http://localhost</strong> in Chrome 127+ with the Prompt API enabled — <code>file://</code> origins are blocked.';
+      liveLabel.textContent = 'unavailable';
+      liveLabel.style.color = 'var(--accent)';
+      sendBtn.disabled = true;
+      return;
+    }
+    try {
+      const status = await window.LanguageModel.availability();
+      if (status === 'readily' || status === 'available') {
+        statusCard.className = 'status ok';
+        statusTag.textContent = 'ready';
+        statusText.textContent = 'Gemini Nano is loaded on this device. Conversations stay here.';
+        liveLabel.textContent = 'live · on-device';
+      } else if (status === 'after-download' || status === 'downloadable') {
+        statusCard.className = 'status warn';
+        statusTag.textContent = status;
+        statusText.textContent = 'The model is available but needs to download first. It may begin on your next request.';
+        liveLabel.textContent = 'downloading';
+      } else {
+        statusCard.className = 'status warn';
+        statusTag.textContent = status || 'unknown';
+        statusText.textContent = `Engine reports: ${status}`;
+        liveLabel.textContent = status;
+      }
+    } catch (err) {
+      statusCard.className = 'status err';
+      statusTag.textContent = 'error';
+      statusText.textContent = err.message;
+    }
+  }
+  checkAvailability();
+
+  // ============= AUDIO INPUT =============
+  let recognition;
+  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+      micBtn.classList.add('recording');
+      chatInput.placeholder = 'Listening…';
+    };
+    recognition.onresult = (event) => {
+      let transcript = '';
+      for (let i = 0; i < event.results.length; ++i) {
+        transcript += event.results[i][0].transcript;
+      }
+      chatInput.value = transcript;
+      chatInput.dispatchEvent(new Event('input'));
+    };
+    recognition.onend = () => {
+      micBtn.classList.remove('recording');
+      chatInput.placeholder = 'Ask anything — your text never leaves this device…';
+    };
+    micBtn.addEventListener('click', () => {
+      if (micBtn.classList.contains('recording')) recognition.stop();
+      else { chatInput.value = ''; recognition.start(); }
+    });
+  } else {
+    micBtn.style.display = 'none';
+  }
+
+  // ============= MESSAGE RENDERING =============
+  let heroVisible = true;
+  function clearHero() {
+    if (heroVisible) {
+      chatContainer.innerHTML = '';
+      heroVisible = false;
+    }
+  }
+
+  function appendMessage(role, text) {
+    clearHero();
+    const wrap = document.createElement('div');
+    wrap.className = `msg ${role}`;
+
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
+    const who = document.createElement('span');
+    who.className = 'who';
+    who.textContent = role === 'user' ? 'You' : 'Nano';
+    const ts = document.createElement('span');
+    const d = new Date();
+    ts.textContent = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
+    meta.appendChild(who);
+    meta.appendChild(ts);
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+
+    if (role === 'ai') {
+      bubble.innerHTML = '<span class="text"></span><span class="cursor"></span>';
+    } else {
+      bubble.textContent = text;
+    }
+
+    wrap.appendChild(meta);
+    wrap.appendChild(bubble);
+    chatContainer.appendChild(wrap);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    return { wrap, bubble };
+  }
+
+  function attachCopyButton(wrap, getText) {
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = '⎘ copy response';
+    btn.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(getText());
+      btn.textContent = '✓ copied';
+      setTimeout(() => { btn.textContent = '⎘ copy response'; }, 1600);
+    });
+    wrap.appendChild(btn);
+  }
+
+  // ============= WARM SESSION LIFECYCLE =============
+  // We keep one LanguageModel session alive across turns. It's only
+  // rebuilt when the user changes a knob (temp/topK/system prompt), is
+  // idle for IDLE_RELEASE_MS, or backgrounds the tab. This avoids paying
+  // the create() cost on every prompt — that was the slow part.
+  let warmSession = null;
+  let warmKey = '';       // signature of params the warm session was built with
+  let idleTimer = null;
+  const IDLE_RELEASE_MS = 5 * 60 * 1000; // 5 min
+
+  function paramKey() {
+    return JSON.stringify({
+      t: parseFloat(tempSlider.value),
+      k: parseInt(topkSlider.value),
+      s: systemPromptInput.value.trim(),
+    });
+  }
+
+  function invalidateSession(reason) {
+    if (!warmSession) return;
+    try { warmSession.destroy && warmSession.destroy(); } catch (_) {}
+    warmSession = null;
+    warmKey = '';
+    if (reason) console.debug('[nano] session released:', reason);
+  }
+
+  function resetIdleTimer() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => invalidateSession('idle 5m'), IDLE_RELEASE_MS);
+  }
+
+  // Release VRAM when the tab is hidden or being unloaded. Don't poll —
+  // just hook the events the browser already gives us.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') invalidateSession('tab hidden');
+  });
+  window.addEventListener('pagehide', () => invalidateSession('pagehide'));
+
+  async function getSession() {
+    const key = paramKey();
+    if (warmSession && warmKey === key) return warmSession;
+
+    // params changed (or no session yet) — rebuild
+    invalidateSession('rebuild for new params');
+
+    const config = {
+      temperature: parseFloat(tempSlider.value),
+      topK: parseInt(topkSlider.value),
+    };
+    const sys = systemPromptInput.value.trim();
+    if (sys) {
+      // Both API shapes — older Chrome used systemPrompt, newer uses initialPrompts.
+      config.systemPrompt = sys;
+      config.initialPrompts = [{ role: 'system', content: sys }];
+    }
+    warmSession = await window.LanguageModel.create(config);
+    warmKey = key;
+    return warmSession;
+  }
+
+  // ============= CORE GENERATION =============
+  // Streaming handles two API shapes:
+  //   (A) older Chrome → cumulative strings, replace
+  //   (B) newer Chrome → incremental deltas, accumulate
+  // We detect by comparing chunk #2 against the running buffer.
+  sendBtn.addEventListener('click', async () => {
+    const text = chatInput.value.trim();
+    if (!text) return;
+
+    appendMessage('user', text);
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    sendBtn.disabled = true;
+
+    const { wrap, bubble } = appendMessage('ai', '');
+    const textNode = bubble.querySelector('.text');
+    const cursorNode = bubble.querySelector('.cursor');
+
+    const started = performance.now();
+    let firstTokenAt = null;
+
+    try {
+      const session = await getSession();
+
+      let stream;
+      if (typeof session.promptStreaming === 'function') {
+        stream = session.promptStreaming(text);
+      } else {
+        const full = await session.prompt(text);
+        firstTokenAt = performance.now();
+        textNode.innerHTML = renderMarkdown(full);
+        cursorNode.remove();
+        finalize(full);
+        return;
+      }
+
+      let accumulated = '';
+      let firstChunkSeen = false;
+      let mode = null; // 'cumulative' | 'delta'
+
+      for await (const chunk of stream) {
+        if (typeof chunk !== 'string') continue;
+        if (firstTokenAt === null) firstTokenAt = performance.now();
+
+        if (!firstChunkSeen) {
+          firstChunkSeen = true;
+          accumulated = chunk;
+        } else if (mode === null) {
+          if (chunk.startsWith(accumulated) && chunk.length > accumulated.length) {
+            mode = 'cumulative';
+            accumulated = chunk;
+          } else {
+            mode = 'delta';
+            accumulated += chunk;
+          }
+        } else if (mode === 'cumulative') {
+          accumulated = chunk;
+        } else {
+          accumulated += chunk;
+        }
+
+        textNode.innerHTML = renderMarkdown(accumulated);
+        tokenCount.textContent = `${approxTokens(accumulated)} TOKENS`;
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }
+
+      cursorNode.remove();
+      finalize(accumulated);
+
+      function finalize(finalText) {
+        const total = Math.round(performance.now() - started);
+        const ttft  = firstTokenAt ? Math.round(firstTokenAt - started) : total;
+        footRight.textContent = `Local · ${ttft}ms to first token · ${total}ms total · ${approxTokens(finalText)} tok`;
+        attachCopyButton(wrap, () => finalText);
+      }
+
+    } catch (err) {
+      console.error(err);
+      // If the session went bad mid-stream, drop it so the next turn rebuilds cleanly.
+      invalidateSession('error in stream');
+      cursorNode && cursorNode.remove();
+      textNode.textContent = '✗ ' + (err.message || String(err));
+      textNode.style.color = 'var(--accent)';
+      textNode.style.fontStyle = 'italic';
+    } finally {
+      sendBtn.disabled = false;
+      chatInput.focus();
+      resetIdleTimer();
+    }
+  });
+
+  function approxTokens(s) {
+    // rough heuristic: ~4 chars / token
+    return Math.max(0, Math.round((s || '').length / 4));
+  }
+
+  // Tiny markdown renderer for streamed text.
+  // 1) HTML-escape first (XSS-safe — the model can't inject tags)
+  // 2) Apply markdown transforms on the escaped string
+  // Handles: ``` fenced code, `inline code`, **bold**, *italic*, # headings.
+  // Newlines are preserved by white-space:pre-wrap on .text.
+  function renderMarkdown(src) {
+    if (!src) return '';
+
+    // 1) escape
+    let s = src
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // 2) fenced code blocks ```lang\n...\n```
+    s = s.replace(/```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+      return `<pre><code>${code.replace(/\n$/, '')}</code></pre>`;
+    });
+
+    // Unterminated fence (still streaming): show what we have so far as a pre block
+    const fenceCount = (s.match(/```/g) || []).length;
+    if (fenceCount % 2 === 1) {
+      s = s.replace(/```([a-zA-Z0-9_-]*)\n?([\s\S]*)$/, (_, lang, code) => {
+        return `<pre><code>${code}</code></pre>`;
+      });
+    }
+
+    // 3) headings (line-start # ## ###)
+    s = s.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    s = s.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    s = s.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+    // 4) inline code `x`  — must run before bold/italic so * inside doesn't fire
+    s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+
+    // 5) bold **x** and italic *x*
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+
+    return s;
+  }
+
+  // Enter to send
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!sendBtn.disabled) sendBtn.click();
+    }
+  });
+
+  // ============= SETUP MODAL =============
+  const setupBtn = document.getElementById('setupBtn');
+  const setupModal = document.getElementById('setupModal');
+  const setupClose = document.getElementById('setupClose');
+  const modalRecheck = document.getElementById('modalRecheck');
+
+  function openModal() {
+    setupModal.classList.add('open');
+    setupModal.setAttribute('aria-hidden', 'false');
+  }
+  function closeModal() {
+    setupModal.classList.remove('open');
+    setupModal.setAttribute('aria-hidden', 'true');
+  }
+  setupBtn.addEventListener('click', openModal);
+  setupClose.addEventListener('click', closeModal);
+  setupModal.addEventListener('click', (e) => {
+    if (e.target === setupModal) closeModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && setupModal.classList.contains('open')) closeModal();
+  });
+
+  // copy buttons inside modal
+  document.querySelectorAll('.copy-mini').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const text = btn.dataset.copyFor;
+      try {
+        await navigator.clipboard.writeText(text);
+        const orig = btn.textContent;
+        btn.textContent = 'copied';
+        btn.classList.add('done');
+        setTimeout(() => {
+          btn.textContent = orig;
+          btn.classList.remove('done');
+        }, 1500);
+      } catch (_) {
+        btn.textContent = 'select & copy';
+      }
+    });
+  });
+
+  modalRecheck.addEventListener('click', async () => {
+    modalRecheck.textContent = 'Checking…';
+    await checkAvailability();
+    modalRecheck.textContent = 'Re-check status';
+    // if it worked, close the modal so they can use it
+    if (statusTag.textContent === 'ready') {
+      setTimeout(closeModal, 700);
+    }
+  });
+
+  // Auto-open the modal the first time someone lands here without the API.
+  // We wait a beat so the availability check has time to mark the status.
+  setTimeout(() => {
+    if (typeof window.LanguageModel === 'undefined') {
+      openModal();
+    }
+  }, 600);
+
+  chatInput.focus();
+</script>
+</body>
+</html>
