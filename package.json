@@ -1,0 +1,10 @@
+{
+  "name": "nano-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A chat playground for Gemini Nano, the model built into Chrome. Runs on-device, offline.",
+  "type": "module",
+  "scripts": {
+    "start": "node serve.mjs"
+  }
+}
