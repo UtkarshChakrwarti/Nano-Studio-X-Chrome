@@ -71,6 +71,10 @@
   }
   [hidden] { display: none !important; }
 
+  /* one quiet scrollbar style everywhere, instead of the browser's default bars */
+  * { scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+  .code pre { scrollbar-color: var(--ink-faint) transparent; }
+
   .app {
     height: 100vh;
     height: 100dvh;
@@ -460,10 +464,6 @@
     box-shadow: 3px 3px 0 var(--accent);
   }
 
-  .chat::-webkit-scrollbar { width: 8px; }
-  .chat::-webkit-scrollbar-track { background: transparent; }
-  .chat::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
-  .chat::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
 
   .msg { max-width: 760px; }
   .msg.user { align-self: flex-end; }
@@ -833,10 +833,14 @@
     max-height: 180px;
     min-height: 28px;
     padding: 6px 8px;
+    overflow-y: hidden; /* a scrollbar appears only once the text outgrows the box */
   }
   textarea.chat-input::placeholder {
     color: var(--ink-faint);
     font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .icon-btn {
@@ -992,8 +996,6 @@
     to   { transform: translateY(0);    opacity: 1; }
   }
 
-  .modal::-webkit-scrollbar { width: 8px; }
-  .modal::-webkit-scrollbar-thumb { background: var(--rule); }
 
   .modal-close {
     position: absolute;
@@ -1280,7 +1282,8 @@
         <span id="ctxUsed">nothing yet</span><span id="ctxMax">window —</span>
       </div>
       <p class="group-help">
-        How much of the model's small context window this conversation fills. When it's full, the oldest turns fall out.
+        How much of the model's small context window this conversation fills. Before it runs out, older turns are condensed into a summary so the chat can keep going.
+        <span class="hint" id="ctxNote" hidden></span>
       </p>
     </div>
 
@@ -1494,6 +1497,7 @@
   const ctxFill = $('ctxFill');
   const ctxUsed = $('ctxUsed');
   const ctxMax = $('ctxMax');
+  const ctxNote = $('ctxNote');
   const clock = $('clock');
   const tokenCount = $('tokenCount');
   const footRight = $('footRight');
@@ -1589,9 +1593,12 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
   });
 
   // textarea autosize
+  const INPUT_MAX_HEIGHT = 180;
   function autosize() {
     chatInput.style.height = 'auto';
-    chatInput.style.height = chatInput.scrollHeight + 'px';
+    const needed = chatInput.scrollHeight;
+    chatInput.style.height = Math.min(needed, INPUT_MAX_HEIGHT) + 'px';
+    chatInput.style.overflowY = needed > INPUT_MAX_HEIGHT ? 'auto' : 'hidden';
   }
   chatInput.addEventListener('input', autosize);
 
@@ -1786,11 +1793,24 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
         const u = saved[i], a = saved[i + 1];
         if (!u || !a || u.role !== 'user' || a.role !== 'assistant') break;
         if (typeof u.content !== 'string' || typeof a.content !== 'string') break;
-        transcript.push({ role: 'user', content: u.content, t: u.t }, { role: 'assistant', content: a.content, t: a.t });
+        const answer = { role: 'assistant', content: a.content, t: a.t };
+        if (typeof a.n === 'number') answer.n = a.n; // token cost of the exchange, once measured
+        transcript.push({ role: 'user', content: u.content, t: u.t }, answer);
       }
     }
   }
-  const saveTranscript = () => store.set('nano.chat', transcript.slice(-200));
+  const saveTranscript = () => store.set('nano.chat', transcript);
+
+  // Older turns live on as a summary: `summary` covers transcript[0 .. upto).
+  let memory = { summary: '', upto: 0, rev: 0, noted: false };
+  {
+    const saved = store.get('nano.memory', null);
+    if (saved && typeof saved.summary === 'string' && saved.summary && Number.isInteger(saved.upto) &&
+        saved.upto > 0 && saved.upto % 2 === 0 && saved.upto <= transcript.length) {
+      memory = { summary: saved.summary, upto: saved.upto, rev: 0, noted: true };
+    }
+  }
+  const saveMemory = () => store.set('nano.memory', { summary: memory.summary, upto: memory.upto });
 
   // ============= CHAT VIEW =============
   let heroVisible = false;
@@ -1798,11 +1818,17 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
 
   const nearBottom = () => chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 80;
   function followScroll(force) {
+    if (heroVisible) { // the empty state reads from the top
+      chatContainer.scrollTop = 0;
+      jumpBtn.hidden = true;
+      return;
+    }
     if (force) stick = true;
     if (stick) chatContainer.scrollTop = chatContainer.scrollHeight;
     jumpBtn.hidden = stick;
   }
   chatContainer.addEventListener('scroll', () => {
+    if (heroVisible) return;
     stick = nearBottom();
     jumpBtn.hidden = stick;
   }, { passive: true });
@@ -2014,7 +2040,11 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     key: '',                  // settings the session was built with
     turns: -1,                // transcript length the session contains
     building: null,           // in-flight build: { key, turns, promise, cancel }
-    forgotten: 0,             // messages that no longer fit in the context window
+    memRev: -1,               // memory.rev the session was built with
+    gap: false,               // some turns are in neither the session nor the summary yet
+    undo: null,               // { session, turns, key }: the session as it was before the last turn
+    sync: null,               // promise while a stopped turn is being written into the session
+    compacting: false,        // a summary is being written in the background
     lastContext: null,
   };
   let busy = false;       // a turn is being generated
@@ -2022,6 +2052,11 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
 
   const isMobile = (navigator.userAgentData && navigator.userAgentData.mobile) ||
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  // Chromium-based, but not Google Chrome: embedded previews, Electron apps and
+  // plain Chromium builds expose the API without shipping the model.
+  const isOtherChromium = !!navigator.userAgentData &&
+    !navigator.userAgentData.brands.some((b) => b.brand === 'Google Chrome');
+  const OTHER_CHROMIUM_MSG = 'This browser is built on Chromium but doesn’t include Gemini Nano (embedded previews and most Chromium builds don’t). Open this page in <strong>Google Chrome 148 or newer</strong>.';
   const canSend = () => !!engine.api && ['available', 'downloadable', 'downloading'].includes(engine.availability);
 
   async function checkAvailability() {
@@ -2072,12 +2107,15 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
         body = 'Opened as a file. Chrome only gives the model to pages served over http(s): run <code>node serve.mjs</code> in this folder and open <strong>http://localhost:8000</strong>.';
       } else if (isMobile) {
         body = 'On-device AI needs <strong>desktop Chrome 148 or newer</strong>. Phones can’t run it yet — open this page on a laptop.';
+      } else if (isOtherChromium) {
+        body = OTHER_CHROMIUM_MSG;
       } else {
         body = 'This browser has no built-in model. Use <strong>desktop Chrome 148 or newer</strong>; on Chrome 138–147, switch on the flags in the setup guide.';
       }
     } else if (a === 'unavailable') {
       cls = 'err';
-      body = 'Chrome says this device can’t run the model. It needs about 22 GB of free disk and either a GPU with more than 4 GB of VRAM or 16 GB of RAM.';
+      body = isOtherChromium ? OTHER_CHROMIUM_MSG
+        : 'Chrome says this device can’t run the model. It needs about 22 GB of free disk and either a GPU with more than 4 GB of VRAM or 16 GB of RAM.';
     } else if (a === 'downloadable') {
       live = 'needs download';
       body = 'The model isn’t on this device yet. One download, then it runs offline for good.';
@@ -2157,6 +2195,11 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     ctxUsed.textContent = c ? `${fmtInt(c.used)} tokens used` : 'nothing yet';
     ctxMax.textContent = c ? `window ${fmtInt(c.max)}` : 'window —';
     tokenCount.textContent = c ? `MEMORY ${pct}%` : 'MEMORY —';
+    const note = engine.compacting ? 'condensing older turns into a summary…'
+      : memory.summary ? `older turns kept as a summary · latest ${transcript.length - memory.upto} messages word for word`
+      : '';
+    ctxNote.textContent = note;
+    ctxNote.hidden = !note;
   }
 
   function paintSampling() {
@@ -2168,24 +2211,91 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     modeNote.hidden = !text;
   }
 
-  // ============= ENGINE: warm session lifecycle =============
-  // One LanguageModel session is kept warm and reused across turns. It is
-  // rebuilt (from the transcript, so nothing is forgotten) only when the
-  // system prompt or creativity changes, after an abort or error, or after it
-  // was released for being idle. Rebuilds happen in the background ahead of
-  // the next message, so sending never waits on model start-up when it can
-  // be avoided.
-  const IDLE_RELEASE_MS = 5 * 60 * 1000;
+  // ============= ENGINE: session lifecycle and memory =============
+  // One LanguageModel session is kept warm and reused across turns.
+  //
+  // The model's context window is small (9,216 tokens in current Chrome) and
+  // loading history into a session takes real time (about 1.6 ms per token),
+  // so the rules are:
+  //   - never rebuild when it can be avoided: Stop keeps the session, and
+  //     Regenerate steps back to a free clone taken before the turn;
+  //   - when a session has to be built, replay the longest run of recent
+  //     turns that fits, leaving room for the next exchange;
+  //   - before the window fills, condense the older turns into a summary in
+  //     the background and swap in a compact session, so a conversation can
+  //     keep going without the model losing the thread.
+  // The transcript on screen is never shortened by any of this.
+  const IDLE_RELEASE_MS = 10 * 60 * 1000;
+  const REPLY_RESERVE = 1500;     // tokens kept free for the next question and answer
+  const COMPACT_AT = 0.75;        // condense once the window is this full
+  const KEEP_RECENT = 0.4;        // share of the window kept word for word
+  const SUMMARY_MAX_CHARS = 2400;
+  // Tested against Gemini Nano: the instructions must come after the
+  // conversation, and the reply is pre-started with "Notes:", or the model
+  // tends to carry on the chat instead of describing it.
+  const SUMMARY_SYSTEM = 'You are a note-taker. You never continue a conversation; you only describe it.';
+  const SUMMARY_TASK =
+    'Write notes about the conversation above so an assistant can continue it later without seeing it. ' +
+    'Include every fact the user stated about themselves (names, numbers, places, jobs, preferences), ' +
+    'what they asked for, decisions made, and what was already answered. ' +
+    'Mention long pasted material only by its topic. If earlier notes are given, merge them in and keep their facts. ' +
+    'At most 180 words, one fact per line.';
+  // Characters of each message the note-taker reads (start and end kept). Long
+  // answers cost far more time than they add to the notes.
+  const CLIP = { user: 1500, assistant: 800 };
+  const clip = (s, n) => (s.length > n ? s.slice(0, Math.floor(n * 0.6)) + ' […] ' + s.slice(-Math.floor(n * 0.4)) : s);
   let idleTimer = 0;
 
   const configKey = () => settings.system.trim() + '\u0000' + settings.mode;
+  const systemText = () => {
+    const parts = [settings.system.trim()];
+    if (memory.summary) parts.push('Notes on the earlier part of this conversation:\n' + memory.summary);
+    return parts.filter(Boolean).join('\n\n');
+  };
+
+  const usageOf = (s) => (s.contextUsage != null ? s.contextUsage : s.inputUsage);
+  const windowOf = (s) => (s.contextWindow != null ? s.contextWindow : s.inputQuota);
+  const plain = ({ role, content }) => ({ role, content });
+
+  // Exact token count for a string or a list of messages, or null when unknown.
+  async function measure(session, input) {
+    const fn = session.measureContextUsage || session.measureInputUsage;
+    if (!fn) return null;
+    try {
+      const n = await fn.call(session, input);
+      return typeof n === 'number' && n >= 0 ? n : null;
+    } catch (_) { return null; }
+  }
+  // Each exchange's token cost is stored on its answer (`n`). Until it has been
+  // measured, over-estimate so nothing is promised that might not fit.
+  const estimatePair = (u, a) => Math.ceil((u.content.length + a.content.length) / 3) + 16;
+  const pairCostNow = (list, i) =>
+    (typeof list[i + 1].n === 'number' ? list[i + 1].n : estimatePair(list[i], list[i + 1]));
+  async function pairCost(session, list, i) {
+    const a = list[i + 1];
+    if (typeof a.n === 'number') return a.n;
+    const n = await measure(session, [plain(list[i]), plain(a)]);
+    if (n == null) return estimatePair(list[i], a);
+    a.n = n;
+    return n;
+  }
+
+  function dropUndo() {
+    if (!engine.undo) return;
+    try { engine.undo.session.destroy(); } catch (_) {}
+    engine.undo = null;
+  }
 
   function releaseSession() {
+    cancelTidy();
     if (engine.building) { engine.building.cancel(); engine.building = null; }
+    dropUndo();
     if (engine.session) { try { engine.session.destroy(); } catch (_) {} }
     engine.session = null;
     engine.key = '';
     engine.turns = -1;
+    engine.sync = null;
+    engine.gap = false;
   }
 
   function resetIdle() {
@@ -2221,33 +2331,30 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     });
   }
 
+  // Build a session for the current settings, summary and transcript.
+  // Resolves to { session, from, memRev, gap }: `from` is the first transcript
+  // index loaded word for word; `gap` means some turns fit neither there nor
+  // in the summary yet.
   async function createSession(signal) {
     const api = engine.api;
     if (!api) throw new Error('This browser has no built-in language model.');
-    const sys = settings.system.trim();
-    let replay = transcript.map(({ role, content }) => ({ role, content }));
+    const list = transcript, total = list.length, upto = memory.upto, memRev = memory.rev;
+    const sysText = systemText();
+    const system = sysText ? [{ role: 'system', content: sysText }] : [];
     let sampling = samplingOptions();
-
-    for (;;) {
-      const initialPrompts = [];
-      if (sys) initialPrompts.push({ role: 'system', content: sys });
-      initialPrompts.push(...replay);
+    const options = (history) => {
       const opts = Object.assign({}, engine.langOpts, sampling, { signal, monitor: watchDownload });
-      if (initialPrompts.length) opts.initialPrompts = initialPrompts;
+      if (system.length || history.length) opts.initialPrompts = system.concat(history);
+      return opts;
+    };
+
+    let session;
+    for (;;) {
       try {
-        const session = await api.create(opts);
-        engine.forgotten = transcript.length - replay.length;
-        if ('temperature' in sampling) engine.sampling = typeof session.temperature === 'number' ? 'active' : 'unknown';
-        else if ('samplingMode' in sampling) engine.sampling = session.samplingMode === sampling.samplingMode ? 'active' : 'unknown';
-        return session;
+        session = await api.create(options([]));
+        break;
       } catch (err) {
         if (signal.aborted) throw err;
-        if (err && err.name === 'QuotaExceededError' && replay.length) {
-          // The conversation outgrew the context window: forget the oldest half and retry.
-          replay = replay.slice(Math.ceil(replay.length / 2));
-          while (replay.length && replay[0].role !== 'user') replay.shift();
-          continue;
-        }
         if (Object.keys(sampling).length && (!err || err.name !== 'QuotaExceededError')) {
           sampling = {}; // this build doesn't accept sampling options here
           engine.sampling = 'ignored';
@@ -2256,9 +2363,82 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
         throw err;
       }
     }
+    if ('temperature' in sampling) engine.sampling = typeof session.temperature === 'number' ? 'active' : 'unknown';
+    else if ('samplingMode' in sampling) engine.sampling = session.samplingMode === sampling.samplingMode ? 'active' : 'unknown';
+
+    try {
+      // Walk back from the newest exchange and take as many as fit.
+      let from = upto;
+      const max = windowOf(session);
+      if (typeof max === 'number' && max > 0) {
+        const budget = max - (usageOf(session) || 0) - Math.min(REPLY_RESERVE, Math.round(max * 0.2));
+        let sum = 0;
+        from = total;
+        while (from - 2 >= upto) {
+          const cost = await pairCost(session, list, from - 2);
+          if (signal.aborted) throw stopped();
+          if (sum + cost > budget) break;
+          sum += cost;
+          from -= 2;
+        }
+      }
+      for (;;) {
+        const history = list.slice(from, total).map(plain);
+        if (!history.length) break;
+        try {
+          if (typeof session.append === 'function') {
+            await session.append(history, { signal });
+          } else { // older Chrome: history can only be given at creation
+            const next = await api.create(options(history));
+            try { session.destroy(); } catch (_) {}
+            session = next;
+          }
+          break;
+        } catch (err) {
+          if (signal.aborted) throw err;
+          if (err && err.name === 'QuotaExceededError') { from += 2; continue; } // safety net: one exchange fewer
+          throw err;
+        }
+      }
+      return { session, from, memRev, gap: from > upto };
+    } catch (err) {
+      try { session.destroy(); } catch (_) {}
+      throw err;
+    }
+  }
+
+  function watchOverflow(session) {
+    if (!session.addEventListener) return;
+    const overflow = () => {
+      if (engine.session !== session) return;
+      engine.gap = true; // Chrome dropped the oldest turns itself: fold them into the summary
+      paintContext();
+      scheduleTidy();
+    };
+    session.addEventListener('contextoverflow', overflow);
+    session.addEventListener('quotaoverflow', overflow); // older name
+  }
+
+  function adopt(built, key, turns) {
+    engine.session = built.session;
+    engine.key = key;
+    engine.turns = turns;
+    engine.memRev = built.memRev;
+    engine.gap = built.gap;
+    engine.availability = 'available';
+    engine.progress = null;
+    watchOverflow(built.session);
+    saveTranscript(); // keeps token counts measured while loading
+    paintSampling();
+    paintContext();
+    paintEngine();
+    resetIdle();
+    scheduleTidy();
   }
 
   function ensureSession() {
+    // A stopped turn may still be writing its partial answer into the session.
+    if (engine.sync) return engine.sync.then(ensureSession);
     const key = configKey(), turns = transcript.length;
     if (engine.session && engine.key === key && engine.turns === turns) return Promise.resolve(engine.session);
     const b = engine.building;
@@ -2268,17 +2448,14 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     const ctrl = new AbortController();
     const job = { key, turns, cancel: () => ctrl.abort() };
     job.promise = createSession(ctrl.signal).then(
-      (session) => {
+      (built) => {
         if (engine.building !== job) { // superseded while it was loading
-          try { session.destroy(); } catch (_) {}
+          try { built.session.destroy(); } catch (_) {}
           throw new DOMException('Superseded', 'AbortError');
         }
         engine.building = null;
-        engine.session = session;
-        engine.key = key;
-        engine.turns = turns;
-        onSessionReady(session);
-        return session;
+        adopt(built, key, turns);
+        return built.session;
       },
       (err) => {
         if (engine.building === job) engine.building = null;
@@ -2288,29 +2465,6 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     engine.building = job;
     paintEngine();
     return job.promise;
-  }
-
-  let forgottenNoted = 0;
-  function onSessionReady(session) {
-    engine.availability = 'available';
-    engine.progress = null;
-    const overflow = () => {
-      if (engine.session !== session) return;
-      addNote('The context window is full — the oldest turns just fell out of the model’s memory.');
-      paintContext();
-    };
-    if (session.addEventListener) {
-      session.addEventListener('contextoverflow', overflow);
-      session.addEventListener('quotaoverflow', overflow); // older name
-    }
-    if (engine.forgotten > 0 && engine.forgotten !== forgottenNoted) {
-      addNote(`This conversation is longer than the model’s context window. It remembers only the latest ${transcript.length - engine.forgotten} messages.`);
-    }
-    forgottenNoted = engine.forgotten;
-    paintSampling();
-    paintContext();
-    paintEngine();
-    resetIdle();
   }
 
   // Load (or rebuild) the session ahead of need. Safe to call as often as you like.
@@ -2339,6 +2493,166 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     });
   }
 
+  // ============= ENGINE: memory upkeep (background) =============
+  // Runs only between turns and is cancelled the moment a turn starts, so it
+  // never competes with a reply for the model.
+  let tidyTimer = 0, tidyJob = null, tidyPauseUntil = 0;
+
+  function scheduleTidy() {
+    clearTimeout(tidyTimer);
+    tidyTimer = setTimeout(tidy, 500);
+  }
+  function cancelTidy() {
+    clearTimeout(tidyTimer);
+    if (tidyJob) tidyJob.abort();
+  }
+
+  async function tidy() {
+    if (busy || tidyJob || engine.building || engine.sync || !engine.session) return;
+    if (engine.availability !== 'available' || Date.now() < tidyPauseUntil) return;
+    paintContext();
+    const ctrl = new AbortController();
+    tidyJob = ctrl;
+    try {
+      // A summary that is ready but not loaded yet goes in first.
+      const c = engine.lastContext;
+      if (engine.memRev === memory.rev && c && (engine.gap || c.used / c.max >= COMPACT_AT)) {
+        await compact(ctrl.signal, c.max);
+      }
+      if (!ctrl.signal.aborted && engine.session && engine.memRev !== memory.rev) await swapIn(ctrl.signal);
+    } catch (err) {
+      if (!ctrl.signal.aborted) {
+        console.debug('[nano] memory upkeep failed:', err);
+        tidyPauseUntil = Date.now() + 60000;
+      }
+    } finally {
+      if (tidyJob === ctrl) tidyJob = null;
+      engine.compacting = false;
+      paintContext();
+    }
+  }
+
+  // First transcript index to keep word for word: the newest exchanges that
+  // fit in KEEP_RECENT of the window, and always at least the last one.
+  function chooseSplit(max) {
+    const keep = max * KEEP_RECENT;
+    let i = transcript.length, sum = 0;
+    while (i - 2 >= memory.upto) {
+      const cost = pairCostNow(transcript, i - 2);
+      if (i < transcript.length && sum + cost > keep) break;
+      sum += cost;
+      i -= 2;
+    }
+    return i;
+  }
+
+  // Keep only real note lines: drop anything that reads like the chat carrying on.
+  function cleanNotes(text) {
+    const lines = String(text || '').split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !/^(user|assistant)\s*:/i.test(l));
+    const notes = lines.join('\n').trim();
+    return notes.replace(/[-*•\s]/g, '').length >= 12 ? notes : '';
+  }
+
+  // Only used when the model can't produce notes: keeps what the user said, so
+  // the conversation can still make room instead of retrying forever.
+  function fallbackNotes(prev, msgs) {
+    const said = msgs.filter((m) => m.role === 'user')
+      .map((m) => '- The user said: ' + clip(m.content.replace(/\s+/g, ' ').trim(), 220));
+    return [prev, ...said].filter(Boolean).join('\n');
+  }
+
+  // One note-taking pass over `msgs`, merged with the previous notes.
+  // Returns '' when the model gives nothing usable.
+  async function summarise(base, prev, msgs, signal) {
+    let scale = 1;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const convo = msgs.map((m) =>
+        (m.role === 'user' ? 'USER: ' : 'ASSISTANT: ') + clip(m.content, Math.round((CLIP[m.role] || 800) * scale))).join('\n');
+      const text = (prev ? '<earlier_notes>\n' + prev + '\n</earlier_notes>\n\n' : '') +
+        '<conversation>\n' + convo + '\n</conversation>\n\n' + SUMMARY_TASK;
+      const s = typeof base.clone === 'function' ? await base.clone({ signal }) : base;
+      try {
+        let out;
+        try {
+          out = '- ' + (await s.prompt(
+            [{ role: 'user', content: text }, { role: 'assistant', content: 'Notes:\n-', prefix: true }],
+            { signal })).trim();
+        } catch (err) {
+          if (signal.aborted || (err && err.name === 'QuotaExceededError')) throw err;
+          out = await s.prompt(text, { signal }); // this Chrome can't pre-start the reply
+        }
+        return cleanNotes(out);
+      } catch (err) {
+        if (signal.aborted || !err || err.name !== 'QuotaExceededError') throw err;
+        scale /= 2; // still too long: read less of each message
+      } finally {
+        if (s !== base) { try { s.destroy(); } catch (_) {} }
+      }
+    }
+    return '';
+  }
+
+  // Fold transcript[memory.upto .. split) into the summary, in a throwaway session.
+  async function compact(signal, max) {
+    const list = transcript, upto = memory.upto;
+    const split = chooseSplit(max);
+    if (split <= upto) return false;
+    engine.compacting = true;
+    paintContext();
+    let base = null;
+    try {
+      base = await engine.api.create(Object.assign({}, engine.langOpts, {
+        signal,
+        initialPrompts: [{ role: 'system', content: SUMMARY_SYSTEM }],
+      }));
+      // Read in chunks that fit comfortably (about 3 characters per token, after clipping).
+      const chunkChars = Math.round(max * 0.5) * 3;
+      const clippedLen = (j) => Math.min(list[j].content.length, CLIP.user) + Math.min(list[j + 1].content.length, CLIP.assistant);
+      let summary = memory.summary, i = upto;
+      while (i < split) {
+        const msgs = [];
+        let sum = 0, j = i;
+        while (j < split && (j === i || sum + clippedLen(j) <= chunkChars)) {
+          sum += clippedLen(j);
+          msgs.push(list[j], list[j + 1]);
+          j += 2;
+        }
+        summary = (await summarise(base, summary, msgs, signal)) || fallbackNotes(summary, msgs);
+        i = j;
+      }
+      summary = summary.trim().slice(0, SUMMARY_MAX_CHARS);
+      if (signal.aborted || list !== transcript || memory.upto !== upto || !summary) return false;
+      memory = { summary, upto: split, rev: memory.rev + 1, noted: memory.noted };
+      saveMemory();
+      return true;
+    } finally {
+      engine.compacting = false;
+      if (base) { try { base.destroy(); } catch (_) {} }
+    }
+  }
+
+  // Build the compact session beside the live one and switch over only if
+  // nothing changed meanwhile, so the user never waits on it.
+  async function swapIn(signal) {
+    const key = configKey(), turns = transcript.length;
+    const built = await createSession(signal);
+    const current = !signal.aborted && !busy && !engine.building && !engine.sync && engine.session &&
+      engine.key === key && configKey() === key && transcript.length === turns && built.memRev === memory.rev;
+    if (!current) {
+      try { built.session.destroy(); } catch (_) {}
+      return;
+    }
+    dropUndo();
+    try { engine.session.destroy(); } catch (_) {}
+    adopt(built, key, turns);
+    if (!memory.noted) {
+      memory.noted = true;
+      addNote('Older turns were condensed into a summary to make room. Nothing was removed from this page.');
+    }
+  }
+
   // ============= CORE GENERATION =============
   let turnAbort = null;
 
@@ -2355,24 +2669,53 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     return Math.max(1, Math.round((s || '').length / 4)); // rough fallback: ~4 chars per token
   }
 
-  async function reportStats(session, out, t) {
-    let tokens = approxTokens(out), exact = false;
+  // Keep a copy of the session as it was before this turn (cloning is free),
+  // so Regenerate can step back instead of rebuilding.
+  async function markUndo(session) {
+    dropUndo();
+    if (typeof session.clone !== 'function') return;
     try {
-      const measure = session.measureContextUsage || session.measureInputUsage;
-      if (measure) {
-        const n = await measure.call(session, out);
-        if (typeof n === 'number' && n > 0) { tokens = n; exact = true; }
-      }
+      engine.undo = { session: await session.clone(), turns: transcript.length, key: engine.key };
     } catch (_) {}
+  }
+
+  // An aborted prompt leaves the session untouched, so a stopped turn only
+  // needs its question and partial answer added, not a rebuild.
+  function syncStopped(session, u, a) {
+    engine.turns = transcript.length;
+    if (typeof session.append !== 'function') { releaseSession(); return; }
+    const p = session.append([plain(u), plain(a)]).then(
+      async () => {
+        const n = await measure(session, [plain(u), plain(a)]);
+        if (n != null) { a.n = n; saveTranscript(); }
+      },
+      () => { if (engine.session === session) releaseSession(); } // rebuilt from the transcript instead
+    ).then(() => {
+      if (engine.sync === p) engine.sync = null;
+      paintContext();
+      scheduleTidy();
+    });
+    engine.sync = p;
+  }
+
+  async function afterTurn(session, u, a, t) {
+    const outTokens = await measure(session, a.content);
+    const pair = await measure(session, [plain(u), plain(a)]);
+    if (pair != null) { a.n = pair; saveTranscript(); }
+    const exact = outTokens != null && outTokens > 0;
+    const tokens = exact ? outTokens : approxTokens(a.content);
     const parts = ['Local', `first token ${fmtMs(t.ttft)}`];
     if (t.gen > 50) parts.push(`${(tokens / (t.gen / 1000)).toFixed(1)} tok/s`);
     parts.push(`${exact ? '' : '~'}${fmtInt(tokens)} tokens`, `${fmtMs(t.total)} total`);
     if (t.load > 50) parts.push(`incl. ${fmtMs(t.load)} model load`);
     footRight.textContent = parts.join(' · ');
+    paintContext();
+    scheduleTidy();
   }
 
   async function runTurn(text, userEl) {
     busy = true;
+    cancelTidy(); // the reply gets the model to itself
     const ai = addAiMessage();
     activeAi = ai;
     const ctrl = new AbortController();
@@ -2381,11 +2724,16 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     followScroll(true);
 
     const t0 = performance.now();
-    let tReady = 0, tFirst = 0, out = '';
+    let tReady = 0, tFirst = 0, out = '', session = null;
     const now = Date.now();
+    const pair = () => [
+      { role: 'user', content: text, t: now },
+      { role: 'assistant', content: out, t: Date.now() },
+    ];
 
     try {
-      const session = await abortable(ensureSession(), ctrl.signal);
+      session = await abortable(ensureSession(), ctrl.signal);
+      await markUndo(session);
       tReady = performance.now();
       ai.setStatus('');
 
@@ -2399,10 +2747,11 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
       const tEnd = performance.now();
 
       ai.finish();
-      transcript.push({ role: 'user', content: text, t: now }, { role: 'assistant', content: out, t: Date.now() });
+      const [u, a] = pair();
+      transcript.push(u, a);
       engine.turns = transcript.length; // the warm session now holds this turn too
       saveTranscript();
-      reportStats(session, out, {
+      afterTurn(session, u, a, {
         load: tReady - t0,
         ttft: (tFirst || tEnd) - tReady,
         gen: tEnd - (tFirst || tEnd),
@@ -2410,13 +2759,12 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
       });
     } catch (err) {
       const wasStopped = ctrl.signal.aborted || (err && err.name === 'AbortError');
-      // After an abort or failure the session's context is unknown. Drop it;
-      // it is rebuilt from the transcript, in the background, right below.
-      releaseSession();
       if (wasStopped && out.trim()) {
         ai.finish('stopped');
-        transcript.push({ role: 'user', content: text, t: now }, { role: 'assistant', content: out, t: Date.now() });
+        const [u, a] = pair();
+        transcript.push(u, a);
         saveTranscript();
+        if (session && engine.session === session) syncStopped(session, u, a);
       } else if (wasStopped) {
         // Nothing was written yet: withdraw the turn and hand the text back.
         ai.remove();
@@ -2425,6 +2773,8 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
         if (!chatInput.value) { chatInput.value = text; autosize(); }
       } else {
         console.error(err);
+        // After a real failure the session's state is unknown: rebuild it from the transcript.
+        releaseSession();
         ai.fail(err, () => { ai.remove(); runTurn(text, userEl); });
       }
     } finally {
@@ -2436,6 +2786,7 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
       resetIdle();
       if (!isMobile) chatInput.focus();
       checkAvailability().then(warm);
+      scheduleTidy();
     }
   }
 
@@ -2453,23 +2804,36 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
   }
 
   function regenerate(aiWrap) {
-    if (busy || transcript.length < 2 || !canSend()) return;
+    if (busy || transcript.length < 2 || transcript.length - 2 < memory.upto || !canSend()) return;
     const userEl = aiWrap.previousElementSibling;
     const last = transcript[transcript.length - 1], prev = transcript[transcript.length - 2];
     if (!userEl || !userEl.classList.contains('user') || last.role !== 'assistant' || prev.role !== 'user') return;
     transcript.length -= 2;
     saveTranscript();
     while (userEl.nextElementSibling) userEl.nextElementSibling.remove();
-    runTurn(prev.content, userEl); // the session is rebuilt without the old answer
+
+    // Step back to the copy taken before that turn. If there is none, the
+    // session is rebuilt from the transcript when the turn starts.
+    const undo = engine.undo;
+    if (undo && engine.session && !engine.sync && undo.turns === transcript.length &&
+        undo.key === engine.key && engine.key === configKey()) {
+      engine.undo = null;
+      try { engine.session.destroy(); } catch (_) {}
+      engine.session = undo.session;
+      engine.turns = undo.turns;
+      watchOverflow(undo.session);
+    }
+    runTurn(prev.content, userEl);
   }
 
   function newChat() {
     stopTurn();
     transcript = [];
+    memory = { summary: '', upto: 0, rev: memory.rev + 1, noted: false };
     saveTranscript();
+    saveMemory();
     releaseSession();
     engine.lastContext = null;
-    forgottenNoted = 0;
     footRight.textContent = 'Running locally';
     renderHero();
     paintContext();
@@ -2615,7 +2979,8 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
   // ============= BOOT =============
   // Late layout shifts (web fonts swapping in, window resizes) must not unpin the view.
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => followScroll());
-  window.addEventListener('resize', () => followScroll());
+  window.addEventListener('resize', () => { autosize(); followScroll(); });
+  autosize();
 
   restoreTranscript();
   paintContext();
