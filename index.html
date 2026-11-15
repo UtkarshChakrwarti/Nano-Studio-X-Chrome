@@ -1,13 +1,31 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>NANO / a local intelligence playground</title>
+<meta name="description" content="Chat with Gemini Nano, the AI model built into Chrome. It runs on your own machine: no server, no API key, and it keeps working with Wi-Fi off." />
+<meta name="theme-color" content="#ece7dd" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+
+<!-- link previews (LinkedIn, X, Slack, WhatsApp) -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Nano Studio" />
+<meta property="og:title" content="Nano Studio — an AI chat that runs inside your browser, offline" />
+<meta property="og:description" content="Turn off your Wi-Fi and it still answers. Gemini Nano, running on your own machine in Chrome: no server, no API key, nothing uploaded." />
+<meta property="og:url" content="https://utkarshchakrwarti.github.io/Nano-Studio-X-Chrome/" />
+<meta property="og:image" content="https://utkarshchakrwarti.github.io/Nano-Studio-X-Chrome/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+
+<!-- Fonts load without blocking first paint; the service worker keeps them for offline use. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=JetBrains+Mono:wght@300;400;500;700&family=Inter+Tight:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..600,0..100,0..1&family=JetBrains+Mono:wght@400;500;700&family=Inter+Tight:wght@400;600&display=swap" rel="stylesheet" crossorigin="anonymous" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..600,0..100,0..1&family=JetBrains+Mono:wght@400;500;700&family=Inter+Tight:wght@400;600&display=swap" rel="stylesheet"></noscript>
 <style>
   :root {
     --paper: #ece7dd;
@@ -44,12 +62,18 @@
       radial-gradient(rgba(22,21,20,0.018) 1px, transparent 1px);
     background-size: 3px 3px, 7px 7px;
     background-position: 0 0, 1px 2px;
-    mix-blend-mode: multiply;
     z-index: 1;
   }
 
+  button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  [hidden] { display: none !important; }
+
   .app {
     height: 100vh;
+    height: 100dvh;
     display: grid;
     grid-template-columns: 360px 1fr;
     position: relative;
@@ -98,13 +122,18 @@
   .masthead .issue .live::before {
     content: ""; width: 6px; height: 6px; border-radius: 50%;
     background: var(--accent);
-    box-shadow: 0 0 0 0 rgba(194,65,43,0.55);
+  }
+  /* the dot only pulses while the model is actually usable */
+  .masthead .issue .live.on { color: var(--accent-2); }
+  .masthead .issue .live.on::before {
+    background: var(--accent-2);
+    box-shadow: 0 0 0 0 rgba(107,142,78,0.55);
     animation: ping 2s infinite;
   }
   @keyframes ping {
-    0%   { box-shadow: 0 0 0 0 rgba(194,65,43,0.55); }
-    70%  { box-shadow: 0 0 0 10px rgba(194,65,43,0); }
-    100% { box-shadow: 0 0 0 0 rgba(194,65,43,0); }
+    0%   { box-shadow: 0 0 0 0 rgba(107,142,78,0.55); }
+    70%  { box-shadow: 0 0 0 10px rgba(107,142,78,0); }
+    100% { box-shadow: 0 0 0 0 rgba(107,142,78,0); }
   }
 
   .wordmark {
@@ -234,6 +263,22 @@
     color: var(--accent);
     text-transform: lowercase;
   }
+  .group-help .hint.muted { color: var(--ink-faint); line-height: 1.5; }
+
+  /* meters: context window, model download */
+  .meter {
+    height: 2px;
+    background: var(--rule);
+    margin: 12px 0 2px;
+    position: relative;
+  }
+  .meter-fill {
+    position: absolute; left: 0; top: -1px;
+    height: 4px; width: 0;
+    background: var(--ink);
+    transition: width 0.3s ease, background 0.3s ease;
+  }
+  .meter-fill.high { background: var(--accent); }
 
   /* system prompt */
   .sys-wrap {
@@ -319,6 +364,13 @@
     margin-bottom: 6px;
   }
   .status-body { color: var(--ink); font-size: 12px; }
+  .status-body code {
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    padding: 0 4px;
+    border-radius: 2px;
+    font-size: 11px;
+  }
 
   /* =================== MAIN =================== */
   .main {
@@ -361,7 +413,25 @@
   }
   .topbar-right .clock { color: var(--ink); font-weight: 500; }
 
-  /* chat */
+  .top-btn {
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--ink-soft);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font: inherit;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+  }
+  .top-btn:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .top-btn.update { border-color: var(--accent); color: var(--accent); }
+  .top-btn.update:hover { background: var(--accent); color: var(--paper); }
+  .menu-btn { display: none; }
+
+  /* chat — no smooth scrolling: it fights the per-frame follow while streaming */
   .chat {
     flex: 1;
     overflow-y: auto;
@@ -369,7 +439,25 @@
     display: flex;
     flex-direction: column;
     gap: 36px;
-    scroll-behavior: smooth;
+  }
+
+  .jump {
+    position: absolute;
+    left: 50%;
+    bottom: 132px;
+    transform: translateX(-50%);
+    z-index: 5;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    padding: 7px 14px;
+    border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 3px 3px 0 var(--accent);
   }
 
   .chat::-webkit-scrollbar { width: 8px; }
@@ -393,6 +481,14 @@
   .msg-meta .who { color: var(--ink); font-weight: 700; }
   .msg.user .msg-meta { justify-content: flex-end; }
 
+  .msg-meta .tag {
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 9px;
+  }
+
   .bubble {
     font-size: 16px;
     line-height: 1.7;
@@ -400,15 +496,55 @@
     word-wrap: break-word;
   }
 
-  /* The streamed text lives inside a span — force whitespace handling on it
-     directly so newlines and indentation render instead of collapsing. */
+  /* AI answers are rendered as real blocks (paragraphs, lists, tables, code). */
   .bubble .text {
-    white-space: pre-wrap;
+    white-space: normal;
     word-wrap: break-word;
     overflow-wrap: anywhere;
   }
+  .bubble .text p { margin: 0 0 0.75em; }
+  .bubble .text ul, .bubble .text ol { margin: 0 0 0.75em; padding-left: 1.4em; }
+  .bubble .text li { margin: 0.2em 0; }
+  .bubble .text li > ul, .bubble .text li > ol { margin: 0.2em 0 0; }
+  .bubble .text li::marker { color: var(--accent); }
+  .bubble .text blockquote {
+    margin: 0 0 0.75em;
+    padding-left: 16px;
+    border-left: 2px solid var(--rule);
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+  .bubble .text hr { border: none; border-top: 1px solid var(--rule); margin: 1em 0; }
+  .bubble .text a { color: var(--accent); text-underline-offset: 3px; }
+  .bubble .text del { color: var(--ink-faint); }
+  .bubble .text .table-wrap { overflow-x: auto; margin: 0 0 0.9em; }
+  .bubble .text table {
+    border-collapse: collapse;
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .bubble .text th, .bubble .text td {
+    border-bottom: 1px solid var(--rule);
+    padding: 7px 14px 7px 0;
+    text-align: left;
+    vertical-align: top;
+  }
+  .bubble .text th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-bottom-color: var(--ink);
+  }
+  .bubble .text .error {
+    color: var(--accent);
+    font-style: italic;
+  }
 
-  /* Light markdown rendering inside AI bubbles */
+  /* inline formatting inside AI bubbles */
   .bubble .text strong {
     font-weight: 600;
     font-style: normal;
@@ -427,17 +563,41 @@
     border-radius: 3px;
     color: var(--ink);
   }
-  .bubble .text pre {
+  .bubble .text .code {
     background: var(--ink);
     color: var(--paper);
-    padding: 14px 18px;
-    margin: 12px 0;
+    margin: 4px 4px 1em 0;
     border-radius: 2px;
+    box-shadow: 4px 4px 0 var(--accent);
+  }
+  .bubble .text .code-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 10px 0 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .bubble .text .code-copy {
+    background: transparent;
+    border: 1px solid transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    padding: 3px 8px;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .bubble .text .code-copy:hover { color: var(--paper); border-color: var(--ink-faint); }
+  .bubble .text pre {
+    padding: 8px 18px 14px;
     overflow-x: auto;
+    white-space: pre;
     font-family: 'JetBrains Mono', monospace;
     font-size: 13px;
     line-height: 1.55;
-    box-shadow: 4px 4px 0 var(--accent);
   }
   .bubble .text pre code {
     background: transparent;
@@ -446,16 +606,18 @@
     color: inherit;
     font-size: inherit;
   }
-  .bubble .text h1, .bubble .text h2, .bubble .text h3 {
+  .bubble .text h1, .bubble .text h2, .bubble .text h3, .bubble .text h4 {
     font-family: 'Fraunces', serif;
     font-weight: 500;
     margin: 18px 0 8px;
     line-height: 1.2;
     letter-spacing: -0.01em;
   }
+  .bubble .text > div > :first-child { margin-top: 0; }
   .bubble .text h1 { font-size: 1.4em; }
   .bubble .text h2 { font-size: 1.2em; }
   .bubble .text h3 { font-size: 1.05em; color: var(--accent); }
+  .bubble .text h4 { font-size: 1em; font-style: italic; }
 
   .msg.user .bubble {
     background: var(--ink);
@@ -478,7 +640,12 @@
     position: relative;
   }
 
-  .msg.ai .bubble .cursor {
+  /* Waiting for the first token: a lone cursor. While streaming: the cursor
+     rides the end of the block being written. */
+  .msg.ai .bubble .cursor,
+  .bubble.streaming .md-tail > :is(p, h1, h2, h3, h4, blockquote):last-child::after,
+  .bubble.streaming .md-tail > :is(ul, ol):last-child > li:last-child::after {
+    content: "";
     display: inline-block;
     width: 9px;
     height: 18px;
@@ -488,6 +655,17 @@
     animation: blink 1s steps(2) infinite;
   }
   @keyframes blink { 50% { opacity: 0; } }
+  .bubble .wait-status {
+    margin-left: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .bubble .wait-status:empty { display: none; }
+
+  .msg-actions { display: flex; gap: 18px; margin-top: 2px; padding-left: 25px; }
 
   .msg.system {
     align-self: center;
@@ -541,6 +719,43 @@
     max-width: 58ch;
     margin-bottom: 30px;
   }
+  .hero-notice {
+    display: flex; flex-wrap: wrap; gap: 10px 18px;
+    align-items: center; justify-content: space-between;
+    width: 100%;
+    margin-bottom: 30px;
+    padding: 14px 16px;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--highlight);
+    border-radius: 2px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+  .hero-notice.err { border-left-color: var(--accent); }
+  .hero-notice span { flex: 1; min-width: 220px; }
+  .hero-notice code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    padding: 0 4px;
+    border-radius: 2px;
+  }
+  .hero-notice button {
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    padding: 8px 14px;
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .hero-notice button:hover { background: var(--accent); }
   .suggestion-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -672,6 +887,9 @@
   .send-btn:disabled {
     opacity: 0.4; cursor: not-allowed;
   }
+  .send-btn.stop { background: var(--accent); }
+  .send-btn.stop:hover { background: var(--ink); box-shadow: 2px 2px 0 var(--accent); }
+  .send-btn.stop .arrow { font-size: 9px; transform: none !important; }
   .send-btn .arrow {
     display: inline-block;
     transition: transform 0.2s ease;
@@ -706,7 +924,7 @@
     color: var(--ink-faint);
     cursor: pointer;
     padding: 6px 0;
-    margin-top: 10px;
+    margin-top: 4px;
     border-bottom: 1px solid transparent;
     transition: all 0.15s;
   }
@@ -960,12 +1178,47 @@
     .step-num { font-size: 30px; }
   }
 
-  /* responsive */
+  .scrim { display: none; }
+
+  /* responsive: the sidebar becomes a slide-in drawer */
   @media (max-width: 900px) {
     .app { grid-template-columns: 1fr; }
-    .sidebar { display: none; }
+    .sidebar {
+      position: fixed;
+      top: 0; bottom: 0; left: 0;
+      width: min(360px, 88vw);
+      z-index: 60;
+      transform: translateX(-100%);
+      visibility: hidden;
+      transition: transform 0.22s ease, visibility 0.22s;
+    }
+    body.drawer-open .sidebar { transform: none; visibility: visible; box-shadow: 12px 0 0 var(--shadow); }
+    body.drawer-open .scrim {
+      display: block;
+      position: fixed; inset: 0;
+      z-index: 55;
+      background: rgba(22, 21, 20, 0.45);
+    }
+    .menu-btn { display: inline-block; }
     .chat { padding: 24px; }
     .topbar, .input-zone { padding-left: 24px; padding-right: 24px; }
+    .topbar-left em, .topbar-right .sep, .topbar-right .clock { display: none; }
+    .topbar-right { gap: 10px; }
+    .jump { bottom: 150px; }
+  }
+  @media (max-width: 600px) {
+    .suggestion-grid { grid-template-columns: 1fr; }
+    .chat { padding: 20px 16px; gap: 28px; }
+    .topbar, .input-zone { padding-left: 16px; padding-right: 16px; }
+    .topbar { padding-top: 14px; padding-bottom: 14px; }
+    .msg.ai .bubble { font-size: 17px; padding-left: 16px; }
+    .msg-actions { padding-left: 19px; }
+    .input-foot span:first-child, #tokenCount { display: none; }
+    .send-btn { padding: 0 14px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
   }
 </style>
 </head>
@@ -1003,31 +1256,31 @@
 
     <div class="group">
       <div class="group-header">
-        <span class="group-label"><span class="num">02</span>Temperature</span>
-        <span class="group-value" id="tempVal">0.7</span>
+        <span class="group-label"><span class="num">02</span>Creativity</span>
+        <span class="group-value" id="modeVal">Balanced</span>
       </div>
-      <input type="range" id="temperature" min="0.1" max="2.0" step="0.1" value="0.7" />
+      <input type="range" id="mode" min="0" max="6" step="1" value="3" aria-label="Creativity" />
       <div class="slider-meta">
         <span>precise</span><span>feral</span>
       </div>
       <p class="group-help">
         Controls how adventurous the model is when picking each next word.
-        <span class="hint" id="tempHint">balanced — useful default</span>
+        <span class="hint" id="modeHint">balanced · useful default</span>
+        <span class="hint muted" id="modeNote" hidden></span>
       </p>
     </div>
 
     <div class="group">
       <div class="group-header">
-        <span class="group-label"><span class="num">03</span>Top–K</span>
-        <span class="group-value" id="topkVal">40</span>
+        <span class="group-label"><span class="num">03</span>Memory</span>
+        <span class="group-value" id="ctxVal">—</span>
       </div>
-      <input type="range" id="topk" min="1" max="100" step="1" value="40" />
+      <div class="meter" role="presentation"><div class="meter-fill" id="ctxFill"></div></div>
       <div class="slider-meta">
-        <span>narrow</span><span>wide</span>
+        <span id="ctxUsed">nothing yet</span><span id="ctxMax">window —</span>
       </div>
       <p class="group-help">
-        Limits the candidate pool to the K most likely next words before sampling.
-        <span class="hint" id="topkHint">a healthy mix of options</span>
+        How much of the model's small context window this conversation fills. When it's full, the oldest turns fall out.
       </p>
     </div>
 
@@ -1036,13 +1289,19 @@
         <span>Engine</span>
         <span id="statusTag">checking</span>
       </div>
-      <div class="status-body" id="statusText">Probing browser for local model…</div>
+      <div class="status-body" id="statusText" aria-live="polite">Probing browser for local model…</div>
+      <div class="meter" id="dlMeter" hidden><div class="meter-fill" id="dlFill"></div></div>
+      <button class="setup-btn" id="engineAction" hidden>
+        <span>Download the model</span>
+        <span class="setup-arrow">↓</span>
+      </button>
       <button class="setup-btn" id="setupBtn">
-        <span>How to enable this in Chrome</span>
+        <span>Setup &amp; requirements</span>
         <span class="setup-arrow">→</span>
       </button>
     </div>
   </aside>
+  <div class="scrim" id="scrim"></div>
 
   <!-- ============== MAIN ============== -->
   <main class="main">
@@ -1051,21 +1310,25 @@
         <strong>Nano Studio</strong> <em>— conversations with a model on your own machine</em>
       </div>
       <div class="topbar-right">
-        <span id="tokenCount">0 TOKENS</span>
-        <span>·</span>
+        <button class="top-btn update" id="updatePill" hidden title="A newer version of this page was downloaded">Update ready · reload</button>
+        <span id="tokenCount">MEMORY —</span>
+        <span class="sep">·</span>
         <span class="clock" id="clock">--:--</span>
+        <button class="top-btn" id="newChatBtn" title="Clear this conversation and start over">New chat</button>
+        <button class="top-btn menu-btn" id="menuBtn" aria-label="Open settings">Settings</button>
       </div>
     </div>
 
-    <div class="chat" id="chatContainer">
+    <div class="chat" id="chatContainer" role="log" aria-label="Conversation">
       <!-- hero rendered by JS -->
     </div>
+    <button class="jump" id="jumpBtn" hidden>↓ Latest</button>
 
     <div class="input-zone">
       <div class="input-shell">
-        <textarea id="chatInput" class="chat-input" rows="1" placeholder="Ask anything — your text never leaves this device…"></textarea>
+        <textarea id="chatInput" class="chat-input" rows="1" aria-label="Message" placeholder="Ask anything — your text never leaves this device…"></textarea>
 
-        <button class="icon-btn" id="micBtn" title="Dictate">
+        <button class="icon-btn" id="micBtn" title="Dictate" aria-label="Dictate">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="9" y="2" width="6" height="12" rx="3"></rect>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
@@ -1075,13 +1338,13 @@
         </button>
 
         <button class="send-btn" id="sendBtn">
-          <span>Generate</span>
-          <span class="arrow">→</span>
+          <span id="sendLabel">Generate</span>
+          <span class="arrow" id="sendArrow">→</span>
         </button>
       </div>
       <div class="input-foot">
-        <span>Press <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for newline</span>
-        <span id="footRight">Running locally · 0 ms</span>
+        <span>Press <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for newline · <kbd>Esc</kbd> to stop</span>
+        <span id="footRight">Running locally</span>
       </div>
     </div>
   </main>
@@ -1093,80 +1356,74 @@
     <button class="modal-close" id="setupClose" aria-label="Close">×</button>
 
     <div class="modal-kicker">Setup · One-time</div>
-    <h2 id="modalTitle" class="modal-title">How to turn on <em>Gemini Nano</em> in your Chrome.</h2>
+    <h2 id="modalTitle" class="modal-title">Running <em>Gemini Nano</em> in your Chrome.</h2>
     <p class="modal-lede">
-      Nano is a small AI model that Chrome can run entirely on your own machine —
-      no servers, no API key, nothing leaves the laptop. It's hidden behind two
-      developer flags. Here's the five-minute walk.
+      Nano is a small AI model that Chrome runs entirely on your own machine —
+      no servers, no API key, nothing leaves the laptop. Recent desktop Chrome
+      has it built in; it only needs to download the model once.
     </p>
 
     <ol class="steps">
       <li>
         <div class="step-num">01</div>
         <div class="step-body">
-          <h3>Use the right Chrome</h3>
-          <p>You need <strong>Chrome 138+</strong> (Stable, Dev, or Canary all work). Check at
-            <span class="snippet">chrome://version</span>. If you're older, update first.</p>
+          <h3>Use desktop Chrome 148 or newer</h3>
+          <p>Check at <span class="snippet">chrome://version</span> and update if you're older. It works on
+            <strong>Windows 10/11, macOS 13+, Linux</strong> and Chromebook Plus. Phones, Safari and Firefox can't run it yet.</p>
         </div>
       </li>
 
       <li>
         <div class="step-num">02</div>
         <div class="step-body">
-          <h3>Enable the Prompt API flag</h3>
-          <p>Paste this into Chrome's address bar and hit enter:</p>
-          <div class="copy-row">
-            <code class="copy-target" data-copy="chrome://flags/#prompt-api-for-gemini-nano">chrome://flags/#prompt-api-for-gemini-nano</code>
-            <button class="copy-mini" data-copy-for="chrome://flags/#prompt-api-for-gemini-nano">copy</button>
-          </div>
-          <p>Set the dropdown to <strong>Enabled</strong>.</p>
+          <h3>Check your machine</h3>
+          <p>Chrome needs about <strong>22 GB of free disk</strong> on the drive holding your Chrome profile, and either a
+            <strong>GPU with more than 4 GB of VRAM</strong> or <strong>16 GB of RAM with 4+ CPU cores</strong>.</p>
         </div>
       </li>
 
       <li>
         <div class="step-num">03</div>
         <div class="step-body">
-          <h3>Enable the on-device model flag</h3>
-          <p>Same drill — paste, then set the dropdown:</p>
+          <h3>Download the model — once</h3>
+          <p>Press <strong>Download the model</strong> in the Engine card (or just send a message). Progress shows right there.
+            It needs an unmetered connection this one time; after that everything works offline.</p>
+          <p>To see what Chrome is doing, open:</p>
           <div class="copy-row">
-            <code class="copy-target" data-copy="chrome://flags/#optimization-guide-on-device-model">chrome://flags/#optimization-guide-on-device-model</code>
-            <button class="copy-mini" data-copy-for="chrome://flags/#optimization-guide-on-device-model">copy</button>
+            <code class="copy-target" data-copy="chrome://on-device-internals">chrome://on-device-internals</code>
+            <button class="copy-mini" data-copy-for="chrome://on-device-internals">copy</button>
           </div>
-          <p>Set it to <strong>Enabled BypassPerfRequirement</strong> (the longer option — this lets it run even if Chrome thinks your machine isn't beefy enough).</p>
         </div>
       </li>
 
       <li>
         <div class="step-num">04</div>
         <div class="step-body">
-          <h3>Relaunch Chrome</h3>
-          <p>Click the blue <strong>Relaunch</strong> button that appeared at the bottom of the flags page. All your tabs come back.</p>
+          <h3>On Chrome 138–147: switch on two flags</h3>
+          <p>Older versions hide the model behind flags. Set the first to <strong>Enabled</strong> and the second to
+            <strong>Enabled BypassPerfRequirement</strong>, then press <strong>Relaunch</strong>:</p>
+          <div class="copy-row">
+            <code class="copy-target" data-copy="chrome://flags/#prompt-api-for-gemini-nano">chrome://flags/#prompt-api-for-gemini-nano</code>
+            <button class="copy-mini" data-copy-for="chrome://flags/#prompt-api-for-gemini-nano">copy</button>
+          </div>
+          <div class="copy-row">
+            <code class="copy-target" data-copy="chrome://flags/#optimization-guide-on-device-model">chrome://flags/#optimization-guide-on-device-model</code>
+            <button class="copy-mini" data-copy-for="chrome://flags/#optimization-guide-on-device-model">copy</button>
+          </div>
         </div>
       </li>
 
       <li>
         <div class="step-num">05</div>
         <div class="step-body">
-          <h3>Force the model to download</h3>
-          <p>Open this page and wait. The model is ~2 GB and downloads in the background; the first time can take a few minutes:</p>
+          <h3>Running your own copy?</h3>
+          <p>Chrome refuses to give the model to <span class="snippet">file://</span> pages. From the project folder, start the bundled
+            server — it listens on your machine only:</p>
           <div class="copy-row">
-            <code class="copy-target" data-copy="chrome://on-device-internals">chrome://on-device-internals</code>
-            <button class="copy-mini" data-copy-for="chrome://on-device-internals">copy</button>
+            <code class="copy-target" data-copy="node serve.mjs">node serve.mjs</code>
+            <button class="copy-mini" data-copy-for="node serve.mjs">copy</button>
           </div>
-          <p>Look for status <strong>Ready</strong> or a filled-in <strong>Model path</strong>. If it says <em>downloadable</em> but nothing's moving, just open a tab and click "Generate" once — that kicks the download off.</p>
-        </div>
-      </li>
-
-      <li>
-        <div class="step-num">06</div>
-        <div class="step-body">
-          <h3>Serve this file over localhost</h3>
-          <p>The Prompt API refuses to load from <span class="snippet">file://</span> URLs. From the folder containing this HTML, run:</p>
-          <div class="copy-row">
-            <code class="copy-target" data-copy="python3 -m http.server 8000">python3 -m http.server 8000</code>
-            <button class="copy-mini" data-copy-for="python3 -m http.server 8000">copy</button>
-          </div>
-          <p>Then visit <span class="snippet">http://localhost:8000/nano-studio.html</span> in Chrome.</p>
+          <p>Then open <span class="snippet">http://localhost:8000</span>. No Node? <span class="snippet">python3 -m http.server 8000 --bind 127.0.0.1</span> does the same job.</p>
         </div>
       </li>
     </ol>
@@ -1174,8 +1431,8 @@
     <div class="modal-foot">
       <div class="foot-note">
         <strong>Still stuck?</strong> Open Chrome's DevTools console on this page and type
-        <span class="snippet">await window.LanguageModel.availability()</span> — if the answer
-        isn't <em>available</em>, the message tells you which step needs another look.
+        <span class="snippet">await LanguageModel.availability()</span> — <em>unavailable</em> means
+        this machine doesn't meet step 02, <em>downloadable</em> means step 03 is still to do.
       </div>
       <button class="modal-recheck" id="modalRecheck">Re-check status</button>
     </div>
@@ -1183,57 +1440,114 @@
 </div>
 
 <script>
+  'use strict';
+
+  // ============= HELPERS =============
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  };
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmtInt = (n) => Math.round(n).toLocaleString('en-US');
+  const fmtMs = (ms) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);
+  const store = {
+    get(key, fallback) {
+      try { const v = localStorage.getItem(key); return v == null ? fallback : JSON.parse(v); }
+      catch (_) { return fallback; }
+    },
+    set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {} },
+  };
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (_) { return false; }
+  }
+  function flash(btn, temp, cls) {
+    const orig = btn.dataset.label || (btn.dataset.label = btn.textContent);
+    btn.textContent = temp;
+    if (cls) btn.classList.add(cls);
+    setTimeout(() => { btn.textContent = orig; if (cls) btn.classList.remove(cls); }, 1500);
+  }
+
   // ============= ELEMENTS =============
-  const tempSlider = document.getElementById('temperature');
-  const tempVal = document.getElementById('tempVal');
-  const topkSlider = document.getElementById('topk');
-  const topkVal = document.getElementById('topkVal');
-  const chatInput = document.getElementById('chatInput');
-  const sendBtn = document.getElementById('sendBtn');
-  const micBtn = document.getElementById('micBtn');
-  const chatContainer = document.getElementById('chatContainer');
-  const statusCard = document.getElementById('statusCard');
-  const statusTag = document.getElementById('statusTag');
-  const statusText = document.getElementById('statusText');
-  const liveLabel = document.getElementById('liveLabel');
-  const systemPromptInput = document.getElementById('systemPrompt');
-  const clock = document.getElementById('clock');
-  const tokenCount = document.getElementById('tokenCount');
-  const footRight = document.getElementById('footRight');
+  const chatInput = $('chatInput');
+  const sendBtn = $('sendBtn');
+  const sendLabel = $('sendLabel');
+  const sendArrow = $('sendArrow');
+  const micBtn = $('micBtn');
+  const chatContainer = $('chatContainer');
+  const jumpBtn = $('jumpBtn');
+  const statusCard = $('statusCard');
+  const statusTag = $('statusTag');
+  const statusText = $('statusText');
+  const dlMeter = $('dlMeter');
+  const dlFill = $('dlFill');
+  const engineAction = $('engineAction');
+  const liveLabel = $('liveLabel');
+  const systemPromptInput = $('systemPrompt');
+  const modeSlider = $('mode');
+  const modeVal = $('modeVal');
+  const modeHint = $('modeHint');
+  const modeNote = $('modeNote');
+  const ctxVal = $('ctxVal');
+  const ctxFill = $('ctxFill');
+  const ctxUsed = $('ctxUsed');
+  const ctxMax = $('ctxMax');
+  const clock = $('clock');
+  const tokenCount = $('tokenCount');
+  const footRight = $('footRight');
+  const newChatBtn = $('newChatBtn');
+  const menuBtn = $('menuBtn');
+  const scrim = $('scrim');
+  const updatePill = $('updatePill');
 
-  // sliders
-  const tempHint = document.getElementById('tempHint');
-  const topkHint = document.getElementById('topkHint');
-
-  function describeTemp(t) {
-    if (t <= 0.3) return 'rigid · same answer every time';
-    if (t <= 0.6) return 'focused · sticks to the obvious choice';
-    if (t <= 0.9) return 'balanced · useful default';
-    if (t <= 1.3) return 'creative · willing to surprise you';
-    return 'unhinged · expect typos and tangents';
+  // ============= SETTINGS (saved on this device) =============
+  // Chrome's web Prompt API takes a preset "sampling mode" rather than raw
+  // temperature / top-K. Where the legacy knobs still exist (extensions, older
+  // Chrome) the t / k values below are used instead.
+  const MODES = [
+    { id: 'most-predictable',     name: 'Exact',    hint: 'near-deterministic · same answer every time', t: 0.1, k: 1 },
+    { id: 'predictable',          name: 'Steady',   hint: 'focused · sticks to the obvious choice',      t: 0.4, k: 3 },
+    { id: 'slightly-predictable', name: 'Measured', hint: 'careful, with a little variety',              t: 0.7, k: 3 },
+    { id: 'balanced',             name: 'Balanced', hint: 'balanced · useful default',                   t: 1.0, k: 3 },
+    { id: 'slightly-creative',    name: 'Loose',    hint: 'creative · willing to surprise you',          t: 1.2, k: 8 },
+    { id: 'creative',             name: 'Creative', hint: 'broad · room for unusual word choices',       t: 1.5, k: 20 },
+    { id: 'most-creative',        name: 'Wild',     hint: 'unhinged · expect tangents',                  t: 2.0, k: 40 },
+  ];
+  const settings = { system: '', mode: 3 };
+  {
+    const saved = store.get('nano.settings', null);
+    if (saved && typeof saved.system === 'string') settings.system = saved.system;
+    if (saved && Number.isInteger(saved.mode) && MODES[saved.mode]) settings.mode = saved.mode;
   }
-  function describeTopK(k) {
-    if (k <= 5)  return 'tunnel vision · only the top few words';
-    if (k <= 20) return 'tight · safe, predictable phrasing';
-    if (k <= 50) return 'a healthy mix of options';
-    if (k <= 80) return 'broad · room for unusual word choices';
-    return 'wide open · anything plausible is fair game';
+  systemPromptInput.value = settings.system;
+  modeSlider.value = settings.mode;
+
+  let settleTimer = 0;
+  function settingsChanged() {
+    store.set('nano.settings', settings);
+    paintMode();
+    // Rebuild the session in the background once the user stops fiddling,
+    // so the next message doesn't pay for it.
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(warm, 500);
   }
+  function paintMode() {
+    const m = MODES[settings.mode];
+    modeVal.textContent = m.name;
+    modeHint.textContent = m.hint;
+  }
+  paintMode();
 
-  tempSlider.addEventListener('input', e => {
-    const v = parseFloat(e.target.value);
-    tempVal.textContent = v.toFixed(1);
-    tempHint.textContent = describeTemp(v);
+  modeSlider.addEventListener('input', () => {
+    settings.mode = parseInt(modeSlider.value, 10) || 0;
+    settingsChanged();
   });
-  topkSlider.addEventListener('input', e => {
-    const v = parseInt(e.target.value);
-    topkVal.textContent = v;
-    topkHint.textContent = describeTopK(v);
+  systemPromptInput.addEventListener('input', () => {
+    settings.system = systemPromptInput.value;
+    settingsChanged();
   });
-
-  // initialize hints from default values
-  tempHint.textContent = describeTemp(parseFloat(tempSlider.value));
-  topkHint.textContent = describeTopK(parseInt(topkSlider.value));
 
   // presets
   const PRESETS = {
@@ -1268,40 +1582,240 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     btn.addEventListener('click', () => {
       const key = btn.dataset.preset;
       systemPromptInput.value = key ? PRESETS[key] : btn.dataset.sys;
+      settings.system = systemPromptInput.value;
       systemPromptInput.focus();
-      invalidateSession('system prompt changed');
+      settingsChanged();
     });
   });
 
-  // Any param change invalidates the warm session so the next turn rebuilds it.
-  [tempSlider, topkSlider].forEach(el => {
-    el.addEventListener('change', () => invalidateSession('sampling params changed'));
-  });
-  systemPromptInput.addEventListener('change', () => invalidateSession('system prompt changed'));
-
   // textarea autosize
-  chatInput.addEventListener('input', function() {
-    this.style.height = 'auto';
-    this.style.height = this.scrollHeight + 'px';
-  });
+  function autosize() {
+    chatInput.style.height = 'auto';
+    chatInput.style.height = chatInput.scrollHeight + 'px';
+  }
+  chatInput.addEventListener('input', autosize);
 
   // clock
   function updateClock() {
     const d = new Date();
-    const h = d.getHours().toString().padStart(2, '0');
-    const m = d.getMinutes().toString().padStart(2, '0');
-    clock.textContent = `${h}:${m}`;
+    clock.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
   updateClock();
   setInterval(updateClock, 30000);
 
-  // ============= HERO STATE =============
+  // ============= MARKDOWN =============
+  // Small, dependency-free renderer. Everything is HTML-escaped before any tag
+  // is produced, so model output can never inject markup. Code is pulled out
+  // first, so `# comments` and *args inside code stay exactly as written.
+  const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ESC[c]);
+
+  const FENCE_OPEN = /^\s*(`{3,}|~{3,})\s*([^\s`]*)[^`]*$/;
+  const fenceCloses = (line, marker) => {
+    const t = line.trim();
+    return t.length >= 3 && t[0] === marker && t === marker.repeat(t.length);
+  };
+  const HR = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
+  const HEADING = /^\s{0,3}(#{1,6})\s+(.+)$/;
+  const LIST = /^(\s*)([-*+]|\d{1,9}[.)])\s+(\S.*)$/;
+  const QUOTE = /^\s{0,3}>\s?/;
+  const isTableSep = (line) =>
+    line.includes('|') && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(line);
+
+  function renderInline(src) {
+    const stash = [];
+    const keep = (html) => `${stash.push(html) - 1}`;
+    let s = src.replace(/[-]/g, '');
+    s = s.replace(/`([^`\n]+)`/g, (_, code) => keep(`<code>${escapeHtml(code)}</code>`));
+    s = escapeHtml(s);
+    s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) =>
+      keep(`<a href="${url}" target="_blank" rel="noopener noreferrer">`) + label + keep('</a>'));
+    s = s.replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^\w_])__(?=\S)([^\n]*?\S)__(?![\w_])/g, '$1<strong>$2</strong>');
+    s = s.replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, '$1<em>$2</em>');
+    s = s.replace(/(^|[^\w_])_(?=[^\s_])([^_\n]*?[^\s_])_(?![\w_])/g, '$1<em>$2</em>');
+    s = s.replace(/~~(?=\S)([^\n]*?\S)~~/g, '<del>$1</del>');
+    return s.replace(/(\d+)/g, (_, n) => stash[n]);
+  }
+
+  function renderCode(body, lang, closed) {
+    return `<div class="code${closed ? '' : ' open'}"><div class="code-head"><span>${escapeHtml(lang || 'code')}</span>` +
+      `<button type="button" class="code-copy">copy</button></div><pre><code>${escapeHtml(body)}</code></pre></div>`;
+  }
+
+  function renderList(items) {
+    let html = '', i = 0;
+    while (i < items.length) {
+      const base = items[i].indent, ordered = items[i].ordered;
+      html += ordered ? `<ol start="${items[i].num}">` : '<ul>';
+      while (i < items.length && items[i].indent <= base + 1 && items[i].ordered === ordered) {
+        const it = items[i++];
+        const kids = [];
+        while (i < items.length && items[i].indent > base + 1) kids.push(items[i++]);
+        html += '<li>' + it.lines.map(renderInline).join('<br>') + (kids.length ? renderList(kids) : '') + '</li>';
+      }
+      html += ordered ? '</ol>' : '</ul>';
+    }
+    return html;
+  }
+
+  function splitRow(line) {
+    let s = line.trim().replace(/\\\|/g, '');
+    if (s.startsWith('|')) s = s.slice(1);
+    if (s.endsWith('|')) s = s.slice(0, -1);
+    return s.split('|').map((c) => c.trim().replace(//g, '|'));
+  }
+
+  function renderMarkdown(src) {
+    if (!src) return '';
+    const lines = src.replace(/\r\n?/g, '\n').split('\n');
+    let html = '', i = 0, m;
+    const para = [];
+    const flushPara = () => {
+      if (para.length) { html += '<p>' + para.map(renderInline).join('<br>') + '</p>'; para.length = 0; }
+    };
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      if ((m = FENCE_OPEN.exec(line))) {
+        flushPara();
+        const marker = m[1][0], lang = m[2], indent = line.length - line.trimStart().length;
+        const body = [];
+        let closed = false;
+        i++;
+        while (i < lines.length) {
+          if (fenceCloses(lines[i], marker)) { closed = true; i++; break; }
+          const l = lines[i++];
+          body.push(l.slice(Math.min(indent, l.length - l.trimStart().length)));
+        }
+        html += renderCode(body.join('\n'), lang, closed);
+        continue;
+      }
+      if (!line.trim()) { flushPara(); i++; continue; }
+      if ((m = HEADING.exec(line))) {
+        flushPara();
+        const level = Math.min(m[1].length, 4);
+        html += `<h${level}>${renderInline(m[2].trim())}</h${level}>`;
+        i++; continue;
+      }
+      if (HR.test(line)) { flushPara(); html += '<hr>'; i++; continue; }
+      if (QUOTE.test(line)) {
+        flushPara();
+        const inner = [];
+        while (i < lines.length && QUOTE.test(lines[i])) inner.push(lines[i++].replace(QUOTE, ''));
+        html += '<blockquote>' + renderMarkdown(inner.join('\n')) + '</blockquote>';
+        continue;
+      }
+      if (line.includes('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+        flushPara();
+        const head = splitRow(line);
+        const align = splitRow(lines[i + 1]).map((c) => (/^:-+:$/.test(c) ? 'center' : /-:$/.test(c) ? 'right' : ''));
+        const rows = [];
+        i += 2;
+        while (i < lines.length && lines[i].trim() && lines[i].includes('|')) rows.push(splitRow(lines[i++]));
+        const cell = (tag, c, n) =>
+          `<${tag}${align[n] ? ` style="text-align:${align[n]}"` : ''}>${renderInline(c || '')}</${tag}>`;
+        html += '<div class="table-wrap"><table><thead><tr>' + head.map((c, n) => cell('th', c, n)).join('') +
+          '</tr></thead><tbody>' +
+          rows.map((r) => '<tr>' + head.map((_, n) => cell('td', r[n], n)).join('') + '</tr>').join('') +
+          '</tbody></table></div>';
+        continue;
+      }
+      if (LIST.test(line)) {
+        flushPara();
+        const items = [];
+        while (i < lines.length) {
+          const l = lines[i];
+          const lm = LIST.exec(l);
+          if (lm) {
+            items.push({
+              indent: lm[1].replace(/\t/g, '    ').length,
+              ordered: /\d/.test(lm[2]),
+              num: parseInt(lm[2], 10) || 1,
+              lines: [lm[3]],
+            });
+          } else if (l.trim() && /^\s{2,}/.test(l) && !FENCE_OPEN.test(l)) {
+            items[items.length - 1].lines.push(l.trim()); // wrapped continuation of the item
+          } else break;
+          i++;
+        }
+        html += renderList(items);
+        continue;
+      }
+      para.push(line);
+      i++;
+    }
+    flushPara();
+    return html;
+  }
+
+  // While streaming, everything before the last finished block is rendered once
+  // and never touched again; only the block still being written is re-rendered.
+  // Returns the offset up to which `text` (from `from`) is safe to freeze: the
+  // start of a line that follows a blank line, outside any code fence.
+  function safeCut(text, from) {
+    let cut = from, pos = from, inFence = false, marker = '', afterBlank = false;
+    while (pos < text.length) {
+      if (afterBlank && !inFence && !/\s/.test(text[pos])) cut = pos;
+      const nl = text.indexOf('\n', pos);
+      if (nl === -1) break; // last line is still being written
+      const line = text.slice(pos, nl);
+      if (inFence) {
+        if (fenceCloses(line, marker)) inFence = false;
+        afterBlank = false;
+      } else {
+        const m = FENCE_OPEN.exec(line);
+        if (m) { inFence = true; marker = m[1][0]; afterBlank = false; }
+        else afterBlank = !line.trim();
+      }
+      pos = nl + 1;
+    }
+    return cut;
+  }
+
+  // ============= TRANSCRIPT (saved on this device) =============
+  // The transcript is the source of truth. Model sessions are disposable and
+  // can always be rebuilt from it, so nothing is lost when a session is
+  // released, a setting changes, or the page reloads.
+  let transcript = [];
+  {
+    const saved = store.get('nano.chat', []);
+    if (Array.isArray(saved)) {
+      for (let i = 0; i + 1 < saved.length; i += 2) {
+        const u = saved[i], a = saved[i + 1];
+        if (!u || !a || u.role !== 'user' || a.role !== 'assistant') break;
+        if (typeof u.content !== 'string' || typeof a.content !== 'string') break;
+        transcript.push({ role: 'user', content: u.content, t: u.t }, { role: 'assistant', content: a.content, t: a.t });
+      }
+    }
+  }
+  const saveTranscript = () => store.set('nano.chat', transcript.slice(-200));
+
+  // ============= CHAT VIEW =============
+  let heroVisible = false;
+  let stick = true; // follow new output only while the reader is at the bottom
+
+  const nearBottom = () => chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 80;
+  function followScroll(force) {
+    if (force) stick = true;
+    if (stick) chatContainer.scrollTop = chatContainer.scrollHeight;
+    jumpBtn.hidden = stick;
+  }
+  chatContainer.addEventListener('scroll', () => {
+    stick = nearBottom();
+    jumpBtn.hidden = stick;
+  }, { passive: true });
+  jumpBtn.addEventListener('click', () => followScroll(true));
+
   function renderHero() {
+    heroVisible = true;
     chatContainer.innerHTML = `
       <div class="hero">
+        <div class="hero-notice" id="heroNotice" hidden></div>
         <div class="kicker">001 — Begin Here</div>
         <h1>Think quietly,<br>answer <em>locally.</em></h1>
-        <p>This is a small studio for talking to the model baked into your browser. Nothing is uploaded. Nothing leaves. Drag the dials on the left, write a disposition, and ask a question that's been waiting in the back of your head.</p>
+        <p>This is a small studio for talking to the model baked into your browser. Nothing is uploaded. Nothing leaves. Pick a disposition on the left, set how adventurous it should be, and ask a question that's been waiting in the back of your head.</p>
         <div class="suggestion-grid">
           <button class="suggestion" data-fill="Explain quantum entanglement using only kitchen analogies.">
             <span class="s-kicker">Idea · 01</span>
@@ -1322,87 +1836,10 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
         </div>
       </div>
     `;
-    document.querySelectorAll('.suggestion').forEach(s => {
-      s.addEventListener('click', () => {
-        chatInput.value = s.dataset.fill;
-        chatInput.focus();
-        chatInput.dispatchEvent(new Event('input'));
-      });
-    });
+    stick = true;
+    jumpBtn.hidden = true;
+    paintEngine();
   }
-  renderHero();
-
-  // ============= STATUS / AVAILABILITY =============
-  async function checkAvailability() {
-    if (typeof window.LanguageModel === 'undefined') {
-      statusCard.className = 'status err';
-      statusTag.textContent = 'unavailable';
-      statusText.innerHTML = 'No <code>window.LanguageModel</code>. Open this file via <strong>http://localhost</strong> in Chrome 127+ with the Prompt API enabled — <code>file://</code> origins are blocked.';
-      liveLabel.textContent = 'unavailable';
-      liveLabel.style.color = 'var(--accent)';
-      sendBtn.disabled = true;
-      return;
-    }
-    try {
-      const status = await window.LanguageModel.availability();
-      if (status === 'readily' || status === 'available') {
-        statusCard.className = 'status ok';
-        statusTag.textContent = 'ready';
-        statusText.textContent = 'Gemini Nano is loaded on this device. Conversations stay here.';
-        liveLabel.textContent = 'live · on-device';
-      } else if (status === 'after-download' || status === 'downloadable') {
-        statusCard.className = 'status warn';
-        statusTag.textContent = status;
-        statusText.textContent = 'The model is available but needs to download first. It may begin on your next request.';
-        liveLabel.textContent = 'downloading';
-      } else {
-        statusCard.className = 'status warn';
-        statusTag.textContent = status || 'unknown';
-        statusText.textContent = `Engine reports: ${status}`;
-        liveLabel.textContent = status;
-      }
-    } catch (err) {
-      statusCard.className = 'status err';
-      statusTag.textContent = 'error';
-      statusText.textContent = err.message;
-    }
-  }
-  checkAvailability();
-
-  // ============= AUDIO INPUT =============
-  let recognition;
-  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SR();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-
-    recognition.onstart = () => {
-      micBtn.classList.add('recording');
-      chatInput.placeholder = 'Listening…';
-    };
-    recognition.onresult = (event) => {
-      let transcript = '';
-      for (let i = 0; i < event.results.length; ++i) {
-        transcript += event.results[i][0].transcript;
-      }
-      chatInput.value = transcript;
-      chatInput.dispatchEvent(new Event('input'));
-    };
-    recognition.onend = () => {
-      micBtn.classList.remove('recording');
-      chatInput.placeholder = 'Ask anything — your text never leaves this device…';
-    };
-    micBtn.addEventListener('click', () => {
-      if (micBtn.classList.contains('recording')) recognition.stop();
-      else { chatInput.value = ''; recognition.start(); }
-    });
-  } else {
-    micBtn.style.display = 'none';
-  }
-
-  // ============= MESSAGE RENDERING =============
-  let heroVisible = true;
   function clearHero() {
     if (heroVisible) {
       chatContainer.innerHTML = '';
@@ -1410,269 +1847,727 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     }
   }
 
-  function appendMessage(role, text) {
-    clearHero();
-    const wrap = document.createElement('div');
-    wrap.className = `msg ${role}`;
-
-    const meta = document.createElement('div');
-    meta.className = 'msg-meta';
-    const who = document.createElement('span');
-    who.className = 'who';
-    who.textContent = role === 'user' ? 'You' : 'Nano';
-    const ts = document.createElement('span');
-    const d = new Date();
-    ts.textContent = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
-    meta.appendChild(who);
-    meta.appendChild(ts);
-
-    const bubble = document.createElement('div');
-    bubble.className = 'bubble';
-
-    if (role === 'ai') {
-      bubble.innerHTML = '<span class="text"></span><span class="cursor"></span>';
-    } else {
-      bubble.textContent = text;
+  // One listener for everything clickable inside the chat.
+  chatContainer.addEventListener('click', async (e) => {
+    const suggestion = e.target.closest('.suggestion');
+    if (suggestion) {
+      chatInput.value = suggestion.dataset.fill;
+      chatInput.focus();
+      autosize();
+      warm();
+      return;
     }
-
-    wrap.appendChild(meta);
-    wrap.appendChild(bubble);
-    chatContainer.appendChild(wrap);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-    return { wrap, bubble };
-  }
-
-  function attachCopyButton(wrap, getText) {
-    const btn = document.createElement('button');
-    btn.className = 'copy-btn';
-    btn.textContent = '⎘ copy response';
-    btn.addEventListener('click', async () => {
-      await navigator.clipboard.writeText(getText());
-      btn.textContent = '✓ copied';
-      setTimeout(() => { btn.textContent = '⎘ copy response'; }, 1600);
-    });
-    wrap.appendChild(btn);
-  }
-
-  // ============= WARM SESSION LIFECYCLE =============
-  // We keep one LanguageModel session alive across turns. It's only
-  // rebuilt when the user changes a knob (temp/topK/system prompt), is
-  // idle for IDLE_RELEASE_MS, or backgrounds the tab. This avoids paying
-  // the create() cost on every prompt — that was the slow part.
-  let warmSession = null;
-  let warmKey = '';       // signature of params the warm session was built with
-  let idleTimer = null;
-  const IDLE_RELEASE_MS = 5 * 60 * 1000; // 5 min
-
-  function paramKey() {
-    return JSON.stringify({
-      t: parseFloat(tempSlider.value),
-      k: parseInt(topkSlider.value),
-      s: systemPromptInput.value.trim(),
-    });
-  }
-
-  function invalidateSession(reason) {
-    if (!warmSession) return;
-    try { warmSession.destroy && warmSession.destroy(); } catch (_) {}
-    warmSession = null;
-    warmKey = '';
-    if (reason) console.debug('[nano] session released:', reason);
-  }
-
-  function resetIdleTimer() {
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => invalidateSession('idle 5m'), IDLE_RELEASE_MS);
-  }
-
-  // Release VRAM when the tab is hidden or being unloaded. Don't poll —
-  // just hook the events the browser already gives us.
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') invalidateSession('tab hidden');
+    const codeCopy = e.target.closest('.code-copy');
+    if (codeCopy) {
+      const code = codeCopy.closest('.code').querySelector('code');
+      if (await copyText(code.textContent)) flash(codeCopy, 'copied');
+      return;
+    }
+    if (e.target.closest('.notice-setup')) openModal();
   });
-  window.addEventListener('pagehide', () => invalidateSession('pagehide'));
 
-  async function getSession() {
-    const key = paramKey();
-    if (warmSession && warmKey === key) return warmSession;
+  function makeMsg(role, when) {
+    clearHero();
+    const wrap = el('div', `msg ${role}`);
+    const meta = el('div', 'msg-meta');
+    const d = when ? new Date(when) : new Date();
+    meta.append(
+      el('span', 'who', role === 'user' ? 'You' : 'Nano'),
+      el('span', '', `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`)
+    );
+    const bubble = el('div', 'bubble');
+    wrap.append(meta, bubble);
+    chatContainer.appendChild(wrap);
+    return { wrap, meta, bubble };
+  }
 
-    // params changed (or no session yet) — rebuild
-    invalidateSession('rebuild for new params');
+  function addUserMessage(text, when) {
+    const { wrap, bubble } = makeMsg('user', when);
+    bubble.textContent = text;
+    return wrap;
+  }
 
-    const config = {
-      temperature: parseFloat(tempSlider.value),
-      topK: parseInt(topkSlider.value),
-    };
-    const sys = systemPromptInput.value.trim();
-    if (sys) {
-      // Both API shapes — older Chrome used systemPrompt, newer uses initialPrompts.
-      config.systemPrompt = sys;
-      config.initialPrompts = [{ role: 'system', content: sys }];
+  function addNote(text) {
+    if (heroVisible) return;
+    chatContainer.appendChild(el('div', 'msg system', text));
+    followScroll();
+  }
+
+  function addActions(wrap, getText) {
+    const row = el('div', 'msg-actions');
+    const copy = el('button', 'copy-btn', '⎘ copy response');
+    copy.type = 'button';
+    copy.addEventListener('click', async () => {
+      if (await copyText(getText())) flash(copy, '✓ copied');
+    });
+    // Only the latest answer can be regenerated.
+    chatContainer.querySelectorAll('.regen').forEach((b) => b.remove());
+    const regen = el('button', 'copy-btn regen', '↻ regenerate');
+    regen.type = 'button';
+    regen.addEventListener('click', () => regenerate(wrap));
+    row.append(copy, regen);
+    wrap.appendChild(row);
+  }
+
+  function addAiMessage(when) {
+    const { wrap, meta, bubble } = makeMsg('ai', when);
+    const textEl = el('div', 'text');
+    const frozen = el('div', 'md-frozen');
+    const tail = el('div', 'md-tail');
+    const wait = el('span', 'cursor');
+    const status = el('span', 'wait-status');
+    textEl.append(frozen, tail);
+    bubble.append(textEl, wait, status);
+    bubble.classList.add('streaming');
+
+    let text = '', frozenLen = 0, raf = 0;
+
+    // At most one render per frame, and only of the block being written.
+    function paint() {
+      raf = 0;
+      const cut = safeCut(text, frozenLen);
+      if (cut > frozenLen) {
+        frozen.insertAdjacentHTML('beforeend', renderMarkdown(text.slice(frozenLen, cut)));
+        frozenLen = cut;
+      }
+      tail.innerHTML = renderMarkdown(text.slice(frozenLen));
+      followScroll();
     }
-    warmSession = await window.LanguageModel.create(config);
-    warmKey = key;
-    return warmSession;
+    function settle() {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      if (text) paint();
+      bubble.classList.remove('streaming');
+      wait.remove();
+      status.remove();
+    }
+
+    followScroll();
+    return {
+      wrap,
+      setStatus(msg) { status.textContent = msg || ''; },
+      push(delta) {
+        if (!text) { wait.remove(); status.remove(); }
+        text += delta;
+        if (!raf) raf = requestAnimationFrame(paint);
+      },
+      finish(tag) {
+        settle();
+        if (tag) meta.append(el('span', 'tag', tag));
+        addActions(wrap, () => text);
+        followScroll();
+      },
+      fail(err, onRetry) {
+        settle();
+        textEl.append(el('p', 'error', '✗ ' + friendlyError(err)));
+        if (onRetry) {
+          const row = el('div', 'msg-actions');
+          const retry = el('button', 'copy-btn', '↻ try again');
+          retry.type = 'button';
+          retry.addEventListener('click', onRetry);
+          row.append(retry);
+          wrap.appendChild(row);
+        }
+        followScroll();
+      },
+      remove() {
+        if (raf) cancelAnimationFrame(raf);
+        wrap.remove();
+      },
+    };
+  }
+
+  function friendlyError(err) {
+    const name = err && err.name;
+    if (name === 'QuotaExceededError') return 'That is more text than the model’s context window can hold. Shorten it, or start a new chat.';
+    if (name === 'NotSupportedError') return 'The model can’t handle this input (unsupported language or format).';
+    if (name === 'NotAllowedError') return 'Chrome blocked the request. Click the page and try again.';
+    return (err && err.message) || String(err);
+  }
+
+  function restoreTranscript() {
+    if (!transcript.length) { renderHero(); return; }
+    let last = null;
+    for (const m of transcript) {
+      if (m.role === 'user') { addUserMessage(m.content, m.t); continue; }
+      last = addAiMessage(m.t);
+      last.push(m.content);
+      last.finish();
+    }
+    followScroll(true);
+  }
+
+  // ============= ENGINE: availability =============
+  const LANG_OPTS = {
+    expectedInputs: [{ type: 'text', languages: ['en'] }],
+    expectedOutputs: [{ type: 'text', languages: ['en'] }],
+  };
+  const engine = {
+    api: null,
+    langOpts: LANG_OPTS,
+    availability: 'checking', // checking | unsupported | unavailable | downloadable | downloading | available | error
+    progress: null,           // 0..1 while the model downloads
+    error: null,
+    legacyParams: undefined,  // LanguageModel.params() where it still exists
+    sampling: 'unknown',      // active | unknown | ignored
+    session: null,            // warm session whose context equals `transcript`
+    key: '',                  // settings the session was built with
+    turns: -1,                // transcript length the session contains
+    building: null,           // in-flight build: { key, turns, promise, cancel }
+    forgotten: 0,             // messages that no longer fit in the context window
+    lastContext: null,
+  };
+  let busy = false;       // a turn is being generated
+  let activeAi = null;    // the message currently being generated
+
+  const isMobile = (navigator.userAgentData && navigator.userAgentData.mobile) ||
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  const canSend = () => !!engine.api && ['available', 'downloadable', 'downloading'].includes(engine.availability);
+
+  async function checkAvailability() {
+    const api = window.LanguageModel;
+    engine.api = api || null;
+    if (!api) {
+      engine.availability = 'unsupported';
+      paintEngine();
+      return engine.availability;
+    }
+    let status;
+    try {
+      status = await api.availability(engine.langOpts);
+    } catch (_) {
+      try {
+        engine.langOpts = {}; // older builds don't know the language options
+        status = await api.availability();
+      } catch (err) {
+        engine.availability = 'error';
+        engine.error = err;
+        paintEngine();
+        return engine.availability;
+      }
+    }
+    if (status === 'readily') status = 'available';
+    if (status === 'after-download') status = 'downloadable';
+    if (status === 'no') status = 'unavailable';
+    if (engine.legacyParams === undefined && typeof api.params === 'function') {
+      try { engine.legacyParams = await api.params(); } catch (_) { engine.legacyParams = null; }
+    }
+    // A download we started ourselves reports progress; don't regress its state.
+    if (!(engine.building && engine.availability === 'downloading' && status === 'downloadable')) {
+      engine.availability = status;
+    }
+    paintEngine();
+    return engine.availability;
+  }
+
+  function paintEngine() {
+    const a = engine.availability;
+    let cls = 'warn', tag = a, live = a, body = '', action = null;
+
+    if (a === 'checking') {
+      cls = ''; body = 'Probing browser for local model…';
+    } else if (a === 'unsupported') {
+      cls = 'err'; tag = 'unavailable'; live = 'unavailable';
+      if (location.protocol === 'file:') {
+        body = 'Opened as a file. Chrome only gives the model to pages served over http(s): run <code>node serve.mjs</code> in this folder and open <strong>http://localhost:8000</strong>.';
+      } else if (isMobile) {
+        body = 'On-device AI needs <strong>desktop Chrome 148 or newer</strong>. Phones can’t run it yet — open this page on a laptop.';
+      } else {
+        body = 'This browser has no built-in model. Use <strong>desktop Chrome 148 or newer</strong>; on Chrome 138–147, switch on the flags in the setup guide.';
+      }
+    } else if (a === 'unavailable') {
+      cls = 'err';
+      body = 'Chrome says this device can’t run the model. It needs about 22 GB of free disk and either a GPU with more than 4 GB of VRAM or 16 GB of RAM.';
+    } else if (a === 'downloadable') {
+      live = 'needs download';
+      body = 'The model isn’t on this device yet. One download, then it runs offline for good.';
+      action = { label: 'Download the model', run: startDownload };
+    } else if (a === 'downloading') {
+      const pct = engine.progress == null ? null : Math.round(engine.progress * 100);
+      body = pct == null ? 'Downloading the model…'
+        : pct >= 100 ? 'Download finished — loading the model…'
+        : `Downloading the model… ${pct}%`;
+    } else if (a === 'available') {
+      cls = 'ok'; live = 'on-device';
+      if (engine.session) { tag = 'warm'; body = 'Gemini Nano is loaded and warm. Conversations stay on this device.'; }
+      else if (engine.building) { tag = 'loading'; body = 'Loading the model into memory…'; }
+      else { tag = 'ready'; body = 'Gemini Nano is on this device, resting. It wakes as you start typing.'; }
+    } else if (a === 'error') {
+      cls = 'err'; body = escapeHtml((engine.error && engine.error.message) || 'Unknown error');
+    } else {
+      body = `Engine reports: ${escapeHtml(String(a))}`;
+    }
+
+    statusCard.className = `status ${cls}`.trim();
+    statusTag.textContent = tag;
+    statusText.innerHTML = body;
+    liveLabel.textContent = live;
+    liveLabel.classList.toggle('on', a === 'available');
+
+    dlMeter.hidden = a !== 'downloading';
+    dlFill.style.width = `${Math.round((engine.progress || 0) * 100)}%`;
+
+    engineAction.hidden = !action;
+    if (action) {
+      engineAction.firstElementChild.textContent = action.label;
+      engineAction.onclick = action.run;
+    }
+
+    // Mirror problems into the empty-state so they're visible without the sidebar.
+    const notice = heroVisible ? $('heroNotice') : null;
+    if (notice) {
+      const show = a === 'unsupported' || a === 'unavailable' || a === 'error' || a === 'downloadable' || a === 'downloading';
+      notice.hidden = !show;
+      if (show) {
+        notice.className = `hero-notice ${cls}`;
+        notice.innerHTML = `<span>${body}</span><button type="button" class="notice-setup">Setup guide →</button>`;
+      }
+    }
+
+    if (activeAi) {
+      activeAi.setStatus(
+        a === 'downloading' ? body
+        : engine.building ? (transcript.length ? 'loading the model and this conversation…' : 'loading the model…')
+        : ''
+      );
+    }
+    paintComposer();
+  }
+
+  function paintComposer() {
+    sendBtn.classList.toggle('stop', busy);
+    sendLabel.textContent = busy ? 'Stop' : 'Generate';
+    sendArrow.textContent = busy ? '■' : '→';
+    sendBtn.disabled = !busy && !canSend();
+    chatContainer.setAttribute('aria-busy', busy ? 'true' : 'false');
+  }
+
+  function paintContext() {
+    const s = engine.session;
+    if (s) {
+      const used = s.contextUsage != null ? s.contextUsage : s.inputUsage;
+      const max = s.contextWindow != null ? s.contextWindow : s.inputQuota;
+      if (typeof used === 'number' && typeof max === 'number' && max > 0) engine.lastContext = { used, max };
+    }
+    const c = transcript.length || s ? engine.lastContext : null;
+    const pct = c ? Math.min(100, Math.round((c.used / c.max) * 100)) : 0;
+    ctxVal.textContent = c ? `${pct}%` : '—';
+    ctxFill.style.width = `${pct}%`;
+    ctxFill.classList.toggle('high', pct >= 80);
+    ctxUsed.textContent = c ? `${fmtInt(c.used)} tokens used` : 'nothing yet';
+    ctxMax.textContent = c ? `window ${fmtInt(c.max)}` : 'window —';
+    tokenCount.textContent = c ? `MEMORY ${pct}%` : 'MEMORY —';
+  }
+
+  function paintSampling() {
+    const text =
+      engine.sampling === 'ignored' ? 'this chrome rejected the setting · using the model default'
+      : engine.sampling === 'unknown' ? 'chrome applies this only on pages in its sampling trial · otherwise the model default is used'
+      : '';
+    modeNote.textContent = text;
+    modeNote.hidden = !text;
+  }
+
+  // ============= ENGINE: warm session lifecycle =============
+  // One LanguageModel session is kept warm and reused across turns. It is
+  // rebuilt (from the transcript, so nothing is forgotten) only when the
+  // system prompt or creativity changes, after an abort or error, or after it
+  // was released for being idle. Rebuilds happen in the background ahead of
+  // the next message, so sending never waits on model start-up when it can
+  // be avoided.
+  const IDLE_RELEASE_MS = 5 * 60 * 1000;
+  let idleTimer = 0;
+
+  const configKey = () => settings.system.trim() + '\u0000' + settings.mode;
+
+  function releaseSession() {
+    if (engine.building) { engine.building.cancel(); engine.building = null; }
+    if (engine.session) { try { engine.session.destroy(); } catch (_) {} }
+    engine.session = null;
+    engine.key = '';
+    engine.turns = -1;
+  }
+
+  function resetIdle() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (busy) { resetIdle(); return; }
+      releaseSession(); // give the memory back; the next keystroke reloads it
+      paintEngine();
+    }, IDLE_RELEASE_MS);
+  }
+
+  // Release when the page is really going away (not when the tab is merely hidden).
+  window.addEventListener('pagehide', releaseSession);
+
+  function samplingOptions() {
+    const m = MODES[settings.mode];
+    const p = engine.legacyParams;
+    if (p && typeof p.maxTemperature === 'number') {
+      return {
+        temperature: Math.min(m.t, p.maxTemperature),
+        topK: Math.max(1, Math.min(m.k, p.maxTopK || m.k)),
+      };
+    }
+    return { samplingMode: m.id };
+  }
+
+  function watchDownload(monitor) {
+    monitor.addEventListener('downloadprogress', (e) => {
+      if (engine.availability === 'available') return; // already on disk
+      engine.progress = e.total > 0 ? e.loaded / e.total : e.loaded;
+      engine.availability = 'downloading';
+      paintEngine();
+    });
+  }
+
+  async function createSession(signal) {
+    const api = engine.api;
+    if (!api) throw new Error('This browser has no built-in language model.');
+    const sys = settings.system.trim();
+    let replay = transcript.map(({ role, content }) => ({ role, content }));
+    let sampling = samplingOptions();
+
+    for (;;) {
+      const initialPrompts = [];
+      if (sys) initialPrompts.push({ role: 'system', content: sys });
+      initialPrompts.push(...replay);
+      const opts = Object.assign({}, engine.langOpts, sampling, { signal, monitor: watchDownload });
+      if (initialPrompts.length) opts.initialPrompts = initialPrompts;
+      try {
+        const session = await api.create(opts);
+        engine.forgotten = transcript.length - replay.length;
+        if ('temperature' in sampling) engine.sampling = typeof session.temperature === 'number' ? 'active' : 'unknown';
+        else if ('samplingMode' in sampling) engine.sampling = session.samplingMode === sampling.samplingMode ? 'active' : 'unknown';
+        return session;
+      } catch (err) {
+        if (signal.aborted) throw err;
+        if (err && err.name === 'QuotaExceededError' && replay.length) {
+          // The conversation outgrew the context window: forget the oldest half and retry.
+          replay = replay.slice(Math.ceil(replay.length / 2));
+          while (replay.length && replay[0].role !== 'user') replay.shift();
+          continue;
+        }
+        if (Object.keys(sampling).length && (!err || err.name !== 'QuotaExceededError')) {
+          sampling = {}; // this build doesn't accept sampling options here
+          engine.sampling = 'ignored';
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  function ensureSession() {
+    const key = configKey(), turns = transcript.length;
+    if (engine.session && engine.key === key && engine.turns === turns) return Promise.resolve(engine.session);
+    const b = engine.building;
+    if (b && b.key === key && b.turns === turns) return b.promise;
+
+    releaseSession();
+    const ctrl = new AbortController();
+    const job = { key, turns, cancel: () => ctrl.abort() };
+    job.promise = createSession(ctrl.signal).then(
+      (session) => {
+        if (engine.building !== job) { // superseded while it was loading
+          try { session.destroy(); } catch (_) {}
+          throw new DOMException('Superseded', 'AbortError');
+        }
+        engine.building = null;
+        engine.session = session;
+        engine.key = key;
+        engine.turns = turns;
+        onSessionReady(session);
+        return session;
+      },
+      (err) => {
+        if (engine.building === job) engine.building = null;
+        throw err;
+      }
+    );
+    engine.building = job;
+    paintEngine();
+    return job.promise;
+  }
+
+  let forgottenNoted = 0;
+  function onSessionReady(session) {
+    engine.availability = 'available';
+    engine.progress = null;
+    const overflow = () => {
+      if (engine.session !== session) return;
+      addNote('The context window is full — the oldest turns just fell out of the model’s memory.');
+      paintContext();
+    };
+    if (session.addEventListener) {
+      session.addEventListener('contextoverflow', overflow);
+      session.addEventListener('quotaoverflow', overflow); // older name
+    }
+    if (engine.forgotten > 0 && engine.forgotten !== forgottenNoted) {
+      addNote(`This conversation is longer than the model’s context window. It remembers only the latest ${transcript.length - engine.forgotten} messages.`);
+    }
+    forgottenNoted = engine.forgotten;
+    paintSampling();
+    paintContext();
+    paintEngine();
+    resetIdle();
+  }
+
+  // Load (or rebuild) the session ahead of need. Safe to call as often as you like.
+  function warm() {
+    if (busy || engine.availability !== 'available') return;
+    ensureSession().catch((err) => {
+      if (!err || err.name !== 'AbortError') console.debug('[nano] warm-up failed:', err);
+      paintEngine();
+    });
+  }
+  chatInput.addEventListener('focus', warm);
+  chatInput.addEventListener('input', warm);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && (transcript.length || chatInput.value)) warm();
+  });
+
+  function startDownload() {
+    if (!canSend()) return;
+    engine.availability = 'downloading';
+    paintEngine();
+    ensureSession().catch((err) => {
+      if (err && err.name === 'AbortError') return;
+      engine.availability = 'error';
+      engine.error = err;
+      paintEngine();
+    });
   }
 
   // ============= CORE GENERATION =============
-  // Streaming handles two API shapes:
-  //   (A) older Chrome → cumulative strings, replace
-  //   (B) newer Chrome → incremental deltas, accumulate
-  // We detect by comparing chunk #2 against the running buffer.
-  sendBtn.addEventListener('click', async () => {
-    const text = chatInput.value.trim();
-    if (!text) return;
+  let turnAbort = null;
 
-    appendMessage('user', text);
-    chatInput.value = '';
-    chatInput.style.height = 'auto';
-    sendBtn.disabled = true;
-
-    const { wrap, bubble } = appendMessage('ai', '');
-    const textNode = bubble.querySelector('.text');
-    const cursorNode = bubble.querySelector('.cursor');
-
-    const started = performance.now();
-    let firstTokenAt = null;
-
-    try {
-      const session = await getSession();
-
-      let stream;
-      if (typeof session.promptStreaming === 'function') {
-        stream = session.promptStreaming(text);
-      } else {
-        const full = await session.prompt(text);
-        firstTokenAt = performance.now();
-        textNode.innerHTML = renderMarkdown(full);
-        cursorNode.remove();
-        finalize(full);
-        return;
-      }
-
-      let accumulated = '';
-      let firstChunkSeen = false;
-      let mode = null; // 'cumulative' | 'delta'
-
-      for await (const chunk of stream) {
-        if (typeof chunk !== 'string') continue;
-        if (firstTokenAt === null) firstTokenAt = performance.now();
-
-        if (!firstChunkSeen) {
-          firstChunkSeen = true;
-          accumulated = chunk;
-        } else if (mode === null) {
-          if (chunk.startsWith(accumulated) && chunk.length > accumulated.length) {
-            mode = 'cumulative';
-            accumulated = chunk;
-          } else {
-            mode = 'delta';
-            accumulated += chunk;
-          }
-        } else if (mode === 'cumulative') {
-          accumulated = chunk;
-        } else {
-          accumulated += chunk;
-        }
-
-        textNode.innerHTML = renderMarkdown(accumulated);
-        tokenCount.textContent = `${approxTokens(accumulated)} TOKENS`;
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-      }
-
-      cursorNode.remove();
-      finalize(accumulated);
-
-      function finalize(finalText) {
-        const total = Math.round(performance.now() - started);
-        const ttft  = firstTokenAt ? Math.round(firstTokenAt - started) : total;
-        footRight.textContent = `Local · ${ttft}ms to first token · ${total}ms total · ${approxTokens(finalText)} tok`;
-        attachCopyButton(wrap, () => finalText);
-      }
-
-    } catch (err) {
-      console.error(err);
-      // If the session went bad mid-stream, drop it so the next turn rebuilds cleanly.
-      invalidateSession('error in stream');
-      cursorNode && cursorNode.remove();
-      textNode.textContent = '✗ ' + (err.message || String(err));
-      textNode.style.color = 'var(--accent)';
-      textNode.style.fontStyle = 'italic';
-    } finally {
-      sendBtn.disabled = false;
-      chatInput.focus();
-      resetIdleTimer();
-    }
-  });
+  const stopped = () => new DOMException('Stopped', 'AbortError');
+  function abortable(promise, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) { reject(stopped()); return; }
+      signal.addEventListener('abort', () => reject(stopped()), { once: true });
+      promise.then(resolve, reject);
+    });
+  }
 
   function approxTokens(s) {
-    // rough heuristic: ~4 chars / token
-    return Math.max(0, Math.round((s || '').length / 4));
+    return Math.max(1, Math.round((s || '').length / 4)); // rough fallback: ~4 chars per token
   }
 
-  // Tiny markdown renderer for streamed text.
-  // 1) HTML-escape first (XSS-safe — the model can't inject tags)
-  // 2) Apply markdown transforms on the escaped string
-  // Handles: ``` fenced code, `inline code`, **bold**, *italic*, # headings.
-  // Newlines are preserved by white-space:pre-wrap on .text.
-  function renderMarkdown(src) {
-    if (!src) return '';
+  async function reportStats(session, out, t) {
+    let tokens = approxTokens(out), exact = false;
+    try {
+      const measure = session.measureContextUsage || session.measureInputUsage;
+      if (measure) {
+        const n = await measure.call(session, out);
+        if (typeof n === 'number' && n > 0) { tokens = n; exact = true; }
+      }
+    } catch (_) {}
+    const parts = ['Local', `first token ${fmtMs(t.ttft)}`];
+    if (t.gen > 50) parts.push(`${(tokens / (t.gen / 1000)).toFixed(1)} tok/s`);
+    parts.push(`${exact ? '' : '~'}${fmtInt(tokens)} tokens`, `${fmtMs(t.total)} total`);
+    if (t.load > 50) parts.push(`incl. ${fmtMs(t.load)} model load`);
+    footRight.textContent = parts.join(' · ');
+  }
 
-    // 1) escape
-    let s = src
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+  async function runTurn(text, userEl) {
+    busy = true;
+    const ai = addAiMessage();
+    activeAi = ai;
+    const ctrl = new AbortController();
+    turnAbort = ctrl;
+    paintEngine();
+    followScroll(true);
 
-    // 2) fenced code blocks ```lang\n...\n```
-    s = s.replace(/```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-      return `<pre><code>${code.replace(/\n$/, '')}</code></pre>`;
-    });
+    const t0 = performance.now();
+    let tReady = 0, tFirst = 0, out = '';
+    const now = Date.now();
 
-    // Unterminated fence (still streaming): show what we have so far as a pre block
-    const fenceCount = (s.match(/```/g) || []).length;
-    if (fenceCount % 2 === 1) {
-      s = s.replace(/```([a-zA-Z0-9_-]*)\n?([\s\S]*)$/, (_, lang, code) => {
-        return `<pre><code>${code}</code></pre>`;
+    try {
+      const session = await abortable(ensureSession(), ctrl.signal);
+      tReady = performance.now();
+      ai.setStatus('');
+
+      const stream = session.promptStreaming(text, { signal: ctrl.signal });
+      for await (const chunk of stream) {
+        if (typeof chunk !== 'string' || !chunk) continue;
+        if (!tFirst) tFirst = performance.now();
+        out += chunk;
+        ai.push(chunk);
+      }
+      const tEnd = performance.now();
+
+      ai.finish();
+      transcript.push({ role: 'user', content: text, t: now }, { role: 'assistant', content: out, t: Date.now() });
+      engine.turns = transcript.length; // the warm session now holds this turn too
+      saveTranscript();
+      reportStats(session, out, {
+        load: tReady - t0,
+        ttft: (tFirst || tEnd) - tReady,
+        gen: tEnd - (tFirst || tEnd),
+        total: tEnd - t0,
       });
+    } catch (err) {
+      const wasStopped = ctrl.signal.aborted || (err && err.name === 'AbortError');
+      // After an abort or failure the session's context is unknown. Drop it;
+      // it is rebuilt from the transcript, in the background, right below.
+      releaseSession();
+      if (wasStopped && out.trim()) {
+        ai.finish('stopped');
+        transcript.push({ role: 'user', content: text, t: now }, { role: 'assistant', content: out, t: Date.now() });
+        saveTranscript();
+      } else if (wasStopped) {
+        // Nothing was written yet: withdraw the turn and hand the text back.
+        ai.remove();
+        userEl.remove();
+        if (!transcript.length) renderHero();
+        if (!chatInput.value) { chatInput.value = text; autosize(); }
+      } else {
+        console.error(err);
+        ai.fail(err, () => { ai.remove(); runTurn(text, userEl); });
+      }
+    } finally {
+      busy = false;
+      activeAi = null;
+      turnAbort = null;
+      paintContext();
+      paintEngine();
+      resetIdle();
+      if (!isMobile) chatInput.focus();
+      checkAvailability().then(warm);
     }
-
-    // 3) headings (line-start # ## ###)
-    s = s.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-    s = s.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-    s = s.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-    // 4) inline code `x`  — must run before bold/italic so * inside doesn't fire
-    s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-
-    // 5) bold **x** and italic *x*
-    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
-    s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-
-    return s;
   }
+
+  function submit() {
+    const text = chatInput.value.trim();
+    if (!text || busy || !canSend()) return;
+    chatInput.value = '';
+    autosize();
+    const userEl = addUserMessage(text);
+    runTurn(text, userEl);
+  }
+
+  function stopTurn() {
+    if (turnAbort) turnAbort.abort();
+  }
+
+  function regenerate(aiWrap) {
+    if (busy || transcript.length < 2 || !canSend()) return;
+    const userEl = aiWrap.previousElementSibling;
+    const last = transcript[transcript.length - 1], prev = transcript[transcript.length - 2];
+    if (!userEl || !userEl.classList.contains('user') || last.role !== 'assistant' || prev.role !== 'user') return;
+    transcript.length -= 2;
+    saveTranscript();
+    while (userEl.nextElementSibling) userEl.nextElementSibling.remove();
+    runTurn(prev.content, userEl); // the session is rebuilt without the old answer
+  }
+
+  function newChat() {
+    stopTurn();
+    transcript = [];
+    saveTranscript();
+    releaseSession();
+    engine.lastContext = null;
+    forgottenNoted = 0;
+    footRight.textContent = 'Running locally';
+    renderHero();
+    paintContext();
+    // If a turn was running, its cleanup re-warms the session.
+    if (!busy) warm();
+    if (!isMobile) chatInput.focus();
+  }
+
+  sendBtn.addEventListener('click', () => (busy ? stopTurn() : submit()));
+  newChatBtn.addEventListener('click', newChat);
 
   // Enter to send
   chatInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
-      if (!sendBtn.disabled) sendBtn.click();
+      if (!busy) submit();
     }
   });
 
+  // ============= AUDIO INPUT =============
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const PLACEHOLDER = chatInput.placeholder;
+  if (SR) {
+    const recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || 'en-US';
+    let onDevice = false, base = '';
+
+    const labelMic = () => {
+      micBtn.title = onDevice
+        ? 'Dictate · transcribed on this device'
+        : 'Dictate · Chrome transcribes speech through its online service';
+      micBtn.setAttribute('aria-label', micBtn.title);
+    };
+    labelMic();
+    // Prefer Chrome's on-device speech model when it is already installed.
+    (async () => {
+      try {
+        if (typeof SR.available !== 'function') return;
+        const state = await SR.available({ langs: [recognition.lang], processLocally: true });
+        if (state === 'available') { recognition.processLocally = true; onDevice = true; labelMic(); }
+      } catch (_) {}
+    })();
+
+    recognition.onstart = () => {
+      micBtn.classList.add('recording');
+      chatInput.placeholder = onDevice ? 'Listening on this device…' : 'Listening… (speech goes through Chrome’s online service)';
+    };
+    recognition.onresult = (event) => {
+      let transcriptText = '';
+      for (let i = 0; i < event.results.length; ++i) transcriptText += event.results[i][0].transcript;
+      chatInput.value = base + transcriptText;
+      autosize();
+    };
+    recognition.onerror = (event) => {
+      if (event.error === 'aborted' || event.error === 'no-speech') return;
+      footRight.textContent = event.error === 'network'
+        ? 'Dictation needs a connection on this device'
+        : `Dictation failed: ${event.error}`;
+    };
+    recognition.onend = () => {
+      micBtn.classList.remove('recording');
+      chatInput.placeholder = PLACEHOLDER;
+      warm();
+    };
+    micBtn.addEventListener('click', () => {
+      if (micBtn.classList.contains('recording')) { recognition.stop(); return; }
+      base = chatInput.value ? chatInput.value.trimEnd() + ' ' : '';
+      try { recognition.start(); } catch (_) {}
+    });
+  } else {
+    micBtn.hidden = true;
+  }
+
+  // ============= SETTINGS DRAWER (small screens) =============
+  const closeDrawer = () => document.body.classList.remove('drawer-open');
+  menuBtn.addEventListener('click', () => document.body.classList.toggle('drawer-open'));
+  scrim.addEventListener('click', closeDrawer);
+
   // ============= SETUP MODAL =============
-  const setupBtn = document.getElementById('setupBtn');
-  const setupModal = document.getElementById('setupModal');
-  const setupClose = document.getElementById('setupClose');
-  const modalRecheck = document.getElementById('modalRecheck');
+  const setupBtn = $('setupBtn');
+  const setupModal = $('setupModal');
+  const setupClose = $('setupClose');
+  const modalRecheck = $('modalRecheck');
+  let modalReturnFocus = null;
 
   function openModal() {
+    modalReturnFocus = document.activeElement;
+    closeDrawer();
     setupModal.classList.add('open');
     setupModal.setAttribute('aria-hidden', 'false');
+    setupClose.focus();
   }
   function closeModal() {
     setupModal.classList.remove('open');
     setupModal.setAttribute('aria-hidden', 'true');
+    if (modalReturnFocus && modalReturnFocus.focus) modalReturnFocus.focus();
   }
   setupBtn.addEventListener('click', openModal);
   setupClose.addEventListener('click', closeModal);
@@ -1680,47 +2575,55 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     if (e.target === setupModal) closeModal();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && setupModal.classList.contains('open')) closeModal();
+    if (e.key !== 'Escape') return;
+    if (setupModal.classList.contains('open')) closeModal();
+    else if (document.body.classList.contains('drawer-open')) closeDrawer();
+    else if (busy) stopTurn();
   });
 
   // copy buttons inside modal
   document.querySelectorAll('.copy-mini').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const text = btn.dataset.copyFor;
-      try {
-        await navigator.clipboard.writeText(text);
-        const orig = btn.textContent;
-        btn.textContent = 'copied';
-        btn.classList.add('done');
-        setTimeout(() => {
-          btn.textContent = orig;
-          btn.classList.remove('done');
-        }, 1500);
-      } catch (_) {
-        btn.textContent = 'select & copy';
-      }
+      if (await copyText(btn.dataset.copyFor)) flash(btn, 'copied', 'done');
+      else btn.textContent = 'select & copy';
     });
   });
 
   modalRecheck.addEventListener('click', async () => {
     modalRecheck.textContent = 'Checking…';
-    await checkAvailability();
+    const status = await checkAvailability();
     modalRecheck.textContent = 'Re-check status';
-    // if it worked, close the modal so they can use it
-    if (statusTag.textContent === 'ready') {
-      setTimeout(closeModal, 700);
+    if (status === 'available') {
+      warm();
+      setTimeout(closeModal, 700); // it works — get out of the way
     }
   });
 
-  // Auto-open the modal the first time someone lands here without the API.
-  // We wait a beat so the availability check has time to mark the status.
-  setTimeout(() => {
-    if (typeof window.LanguageModel === 'undefined') {
-      openModal();
-    }
-  }, 600);
+  // ============= OFFLINE SHELL =============
+  // The service worker caches this page and its fonts, so the app itself
+  // (not just the model) opens with no connection.
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'update-ready') updatePill.hidden = false;
+    });
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+  updatePill.addEventListener('click', () => location.reload());
 
-  chatInput.focus();
+  // ============= BOOT =============
+  // Late layout shifts (web fonts swapping in, window resizes) must not unpin the view.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => followScroll());
+  window.addEventListener('resize', () => followScroll());
+
+  restoreTranscript();
+  paintContext();
+  paintEngine();
+  // Load the model immediately when it is already on disk — by the time the
+  // first message is typed, the session is warm.
+  checkAvailability().then(warm);
+  if (!isMobile) chatInput.focus();
 </script>
 </body>
 </html>
