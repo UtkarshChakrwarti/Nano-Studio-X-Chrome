@@ -4,7 +4,7 @@ A chat playground for **Gemini Nano**, the AI model built into Chrome. It runs o
 
 **Live demo:** https://utkarshchakrwarti.github.io/Nano-Studio-X-Chrome/
 
-![Nano Studio](og.png)
+![Nano Studio](docs/screenshot.png)
 
 ## What it does
 
@@ -47,10 +47,10 @@ cd Nano-Studio-X-Chrome
 ```
 
 ```bash
-node serve.mjs
+npm start
 ```
 
-Open http://localhost:8000. To use another port: `node serve.mjs 3000`.
+Open http://localhost:8000. To use another port: `node scripts/serve.mjs 3000`.
 
 No Node? Python does the same job:
 
@@ -72,9 +72,10 @@ Everything lives in [`index.html`](index.html). The extra files only add offline
 |---|---|
 | `index.html` | The whole app: markup, styles and logic |
 | `sw.js` | Service worker: caches the page and fonts for offline use |
-| `manifest.webmanifest`, `icon*` | Lets Chrome install it as an app |
-| `serve.mjs` | Local server bound to `127.0.0.1` |
-| `og.png` | Link-preview image |
+| `manifest.webmanifest`, `assets/icons/` | Lets Chrome install it as an app |
+| `scripts/serve.mjs` | Local server bound to `127.0.0.1` (`npm start`) |
+| `assets/og.png` | Link-preview image |
+| `docs/` | Screenshots for this README |
 
 The core of it is a few lines of the [Prompt API](https://developer.chrome.com/docs/ai/prompt-api):
 
@@ -130,3 +131,7 @@ To make the slider effective on your hosted copy, register your origin at https:
 - The chat, its notes and your settings are stored in your browser's `localStorage`. **New chat** clears the conversation and its notes.
 - Fonts are loaded from Google Fonts on the first visit, then served from the local cache.
 - Voice input is on-device only when Chrome's local speech model is installed; see above.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

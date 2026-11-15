@@ -5,6 +5,6 @@
   "description": "A chat playground for Gemini Nano, the model built into Chrome. Runs on-device, offline.",
   "type": "module",
   "scripts": {
-    "start": "node serve.mjs"
+    "start": "node scripts/serve.mjs"
   }
 }

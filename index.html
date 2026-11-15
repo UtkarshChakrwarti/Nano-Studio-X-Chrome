@@ -7,8 +7,8 @@
 <meta name="description" content="Chat with Gemini Nano, the AI model built into Chrome. It runs on your own machine: no server, no API key, and it keeps working with Wi-Fi off." />
 <meta name="theme-color" content="#ece7dd" />
 <link rel="manifest" href="manifest.webmanifest" />
-<link rel="icon" href="icon.svg" type="image/svg+xml" />
-<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
 
 <!-- link previews (LinkedIn, X, Slack, WhatsApp) -->
 <meta property="og:type" content="website" />
@@ -16,7 +16,7 @@
 <meta property="og:title" content="Nano Studio — an AI chat that runs inside your browser, offline" />
 <meta property="og:description" content="Turn off your Wi-Fi and it still answers. Gemini Nano, running on your own machine in Chrome: no server, no API key, nothing uploaded." />
 <meta property="og:url" content="https://utkarshchakrwarti.github.io/Nano-Studio-X-Chrome/" />
-<meta property="og:image" content="https://utkarshchakrwarti.github.io/Nano-Studio-X-Chrome/og.png" />
+<meta property="og:image" content="https://utkarshchakrwarti.github.io/Nano-Studio-X-Chrome/assets/og.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta name="twitter:card" content="summary_large_image" />
@@ -1423,8 +1423,8 @@
           <p>Chrome refuses to give the model to <span class="snippet">file://</span> pages. From the project folder, start the bundled
             server — it listens on your machine only:</p>
           <div class="copy-row">
-            <code class="copy-target" data-copy="node serve.mjs">node serve.mjs</code>
-            <button class="copy-mini" data-copy-for="node serve.mjs">copy</button>
+            <code class="copy-target" data-copy="npm start">npm start</code>
+            <button class="copy-mini" data-copy-for="npm start">copy</button>
           </div>
           <p>Then open <span class="snippet">http://localhost:8000</span>. No Node? <span class="snippet">python3 -m http.server 8000 --bind 127.0.0.1</span> does the same job.</p>
         </div>
@@ -2104,7 +2104,7 @@ You are operating under the Karpathy AI Discipline Engine. Your objective is to 
     } else if (a === 'unsupported') {
       cls = 'err'; tag = 'unavailable'; live = 'unavailable';
       if (location.protocol === 'file:') {
-        body = 'Opened as a file. Chrome only gives the model to pages served over http(s): run <code>node serve.mjs</code> in this folder and open <strong>http://localhost:8000</strong>.';
+        body = 'Opened as a file. Chrome only gives the model to pages served over http(s): run <code>npm start</code> in this folder and open <strong>http://localhost:8000</strong>.';
       } else if (isMobile) {
         body = 'On-device AI needs <strong>desktop Chrome 148 or newer</strong>. Phones can’t run it yet — open this page on a laptop.';
       } else if (isOtherChromium) {

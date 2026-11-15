@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Local server for Nano Studio. No dependencies.
 //
-//   node serve.mjs            -> http://localhost:8000
-//   node serve.mjs 3000       -> http://localhost:3000
+//   npm start                    -> http://localhost:8000
+//   node scripts/serve.mjs 3000  -> http://localhost:3000
 //
 // It listens on 127.0.0.1 only, so nothing else on your network can reach it.
 // Chrome treats localhost as a secure origin, which is what the built-in model
@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = fileURLToPath(new URL('.', import.meta.url));
+const ROOT = fileURLToPath(new URL('..', import.meta.url));   // the repository root
 const PORT = Number(process.argv[2] || process.env.PORT || 8000);
 const HOST = '127.0.0.1';
 
@@ -52,7 +52,7 @@ const server = createServer(async (req, res) => {
 
 server.on('error', (err) => {
   console.error(err.code === 'EADDRINUSE'
-    ? `Port ${PORT} is busy. Try: node serve.mjs ${PORT + 1}`
+    ? `Port ${PORT} is busy. Try: node scripts/serve.mjs ${PORT + 1}`
     : err.message);
   process.exit(1);
 });

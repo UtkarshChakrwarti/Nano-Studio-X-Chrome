@@ -6,10 +6,10 @@
 //                           and tell the page when a newer version has arrived
 //   - app files, localhost: network first, so local edits show up on reload
 //   - Google Fonts:         CSS stale-while-revalidate, font files cache-first
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `nano-shell-${VERSION}`;
 const FONTS = `nano-fonts-${VERSION}`;
-const SHELL_FILES = ['./', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+const SHELL_FILES = ['./', 'manifest.webmanifest', 'assets/icons/icon.svg', 'assets/icons/icon-192.png', 'assets/icons/icon-512.png'];
 const DEV = ['localhost', '127.0.0.1', '[::1]'].includes(self.location.hostname);
 
 self.addEventListener('install', (event) => {
